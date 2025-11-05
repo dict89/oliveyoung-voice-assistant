@@ -1,0 +1,15 @@
+# 올리브영 음성 쇼핑 어시스턴트 의존성
+# pip 사용자를 위한 requirements.txt (uv 권장)
+
+pipecat-ai[openai,cartesia,silero,websocket]>=0.0.92
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-dotenv>=1.0.0
+aiohttp>=3.10.0
+python-multipart>=0.0.9
+loguru>=0.7.0
+
+# 개발 의존성 (선택사항)
+# pytest>=8.0.0
+# pytest-asyncio>=0.23.0
+
