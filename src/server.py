@@ -244,6 +244,76 @@ async def root():
                 0%, 100% { height: 20px; }
                 50% { height: 40px; }
             }
+            
+            .chat-container {
+                background: #f8f9fa;
+                border-radius: 10px;
+                padding: 20px;
+                margin: 20px 0;
+                max-height: 400px;
+                overflow-y: auto;
+                display: none;
+            }
+            
+            .chat-container.active {
+                display: block;
+            }
+            
+            .chat-message {
+                margin: 10px 0;
+                padding: 12px 16px;
+                border-radius: 10px;
+                max-width: 80%;
+                word-wrap: break-word;
+                animation: fadeIn 0.3s ease-in;
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .chat-message.user {
+                background: #667eea;
+                color: white;
+                margin-left: auto;
+                text-align: right;
+            }
+            
+            .chat-message.assistant {
+                background: white;
+                color: #333;
+                border: 1px solid #dee2e6;
+            }
+            
+            .chat-message .timestamp {
+                font-size: 0.75em;
+                opacity: 0.7;
+                margin-top: 4px;
+            }
+            
+            .chat-message .speaker {
+                font-weight: bold;
+                margin-bottom: 4px;
+            }
+            
+            .chat-container::-webkit-scrollbar {
+                width: 8px;
+            }
+            
+            .chat-container::-webkit-scrollbar-track {
+                background: #f1f1f1;
+                border-radius: 10px;
+            }
+            
+            .chat-container::-webkit-scrollbar-thumb {
+                background: #667eea;
+                border-radius: 10px;
+            }
+            
+            .chat-container::-webkit-scrollbar-thumb:hover {
+                background: #5568d3;
+            }
         </style>
     </head>
     <body>
@@ -268,6 +338,11 @@ async def root():
             <button id="stopBtn" class="btn stop" onclick="stopConversation()" style="display: none;">
                 🛑 대화 종료
             </button>
+            
+            <div id="chatContainer" class="chat-container">
+                <h3 style="margin: 0 0 15px 0; color: #667eea;">💬 대화 내역</h3>
+                <div id="chatHistory"></div>
+            </div>
             
             <h3 style="margin-top: 30px; color: #333;">주요 기능</h3>
             <ul class="feature-list">
@@ -294,6 +369,10 @@ async def root():
             let mediaRecorder = null;
             let audioContext = null;
             let audioStream = null;
+            let recognition = null;
+            let isUserSpeaking = false;
+            let currentUserMessage = '';
+            let assistantResponseStarted = false;
             
             function showStatus(message, type) {
                 const status = document.getElementById('status');
@@ -306,8 +385,97 @@ async def root():
                 document.getElementById('status').style.display = 'none';
             }
             
+            function addChatMessage(speaker, message) {
+                const chatHistory = document.getElementById('chatHistory');
+                const chatContainer = document.getElementById('chatContainer');
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `chat-message ${speaker}`;
+                
+                const now = new Date();
+                const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                
+                messageDiv.innerHTML = `
+                    <div class="speaker">${speaker === 'user' ? '👤 나' : '🤖 어시스턴트'}</div>
+                    <div>${message}</div>
+                    <div class="timestamp">${timeString}</div>
+                `;
+                
+                chatHistory.appendChild(messageDiv);
+                chatContainer.classList.add('active');
+                
+                // 스크롤을 맨 아래로
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+            
+            function clearChat() {
+                const chatHistory = document.getElementById('chatHistory');
+                const chatContainer = document.getElementById('chatContainer');
+                chatHistory.innerHTML = '';
+                chatContainer.classList.remove('active');
+            }
+            
+            function initSpeechRecognition() {
+                // Web Speech API 지원 확인
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    console.log('Speech Recognition not supported');
+                    return null;
+                }
+                
+                recognition = new SpeechRecognition();
+                recognition.lang = 'ko-KR';
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                
+                recognition.onresult = (event) => {
+                    let interimTranscript = '';
+                    let finalTranscript = '';
+                    
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            finalTranscript += transcript;
+                        } else {
+                            interimTranscript += transcript;
+                        }
+                    }
+                    
+                    if (finalTranscript) {
+                        addChatMessage('user', finalTranscript);
+                        currentUserMessage = '';
+                        isUserSpeaking = false;
+                        
+                        // 어시스턴트 응답 대기 표시
+                        setTimeout(() => {
+                            if (!assistantResponseStarted) {
+                                assistantResponseStarted = true;
+                            }
+                        }, 500);
+                    }
+                };
+                
+                recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                };
+                
+                return recognition;
+            }
+            
             async function startConversation() {
                 try {
+                    // 브라우저 호환성 체크
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        showStatus('이 브라우저는 마이크 접근을 지원하지 않습니다. Chrome, Firefox, Safari 최신 버전을 사용해주세요.', 'error');
+                        return;
+                    }
+                    
+                    // HTTPS 체크 (localhost 제외)
+                    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                        showStatus('보안을 위해 HTTPS 연결이 필요합니다. localhost에서 테스트해주세요.', 'error');
+                        return;
+                    }
+                    
                     showStatus('마이크 권한을 요청하고 있습니다...', 'info');
                     
                     // 마이크 접근 권한 요청
@@ -330,8 +498,22 @@ async def root():
                         document.getElementById('audioVisualizer').classList.add('active');
                         document.getElementById('startBtn').style.display = 'none';
                         document.getElementById('stopBtn').style.display = 'block';
+                        clearChat();
                         
-                        // MediaRecorder 시작
+                        // 초기 인사말 추가
+                        addChatMessage('assistant', '안녕하세요! 올리브영 쇼핑 어시스턴트입니다. 매장 정보나 제품 추천이 필요하시면 말씀해 주세요.');
+                        
+                        // Web Speech API 시작 (대화 내용 표시용)
+                        recognition = initSpeechRecognition();
+                        if (recognition) {
+                            try {
+                                recognition.start();
+                            } catch (e) {
+                                console.log('Recognition already started');
+                            }
+                        }
+                        
+                        // MediaRecorder 시작 (실제 음성 전송용)
                         mediaRecorder = new MediaRecorder(audioStream, {
                             mimeType: 'audio/webm'
                         });
@@ -345,9 +527,33 @@ async def root():
                         mediaRecorder.start(100); // 100ms마다 데이터 전송
                     };
                     
-                    ws.onmessage = (event) => {
-                        if (event.data instanceof Blob) {
-                            // 오디오 데이터 재생
+                    ws.onmessage = async (event) => {
+                        // JSON 메시지 처리 (텍스트)
+                        if (typeof event.data === 'string') {
+                            try {
+                                const data = JSON.parse(event.data);
+                                if (data.type === 'transcript') {
+                                    // 사용자 음성 인식 결과
+                                    if (data.text && data.text.trim()) {
+                                        addChatMessage('user', data.text);
+                                    }
+                                } else if (data.type === 'response') {
+                                    // 어시스턴트 응답 텍스트
+                                    if (data.text && data.text.trim()) {
+                                        addChatMessage('assistant', data.text);
+                                    }
+                                }
+                            } catch (e) {
+                                console.log('Non-JSON message:', event.data);
+                            }
+                        }
+                        // Blob 메시지 처리 (오디오)
+                        else if (event.data instanceof Blob) {
+                            // 첫 오디오 응답이 올 때 어시스턴트 메시지 표시
+                            if (assistantResponseStarted) {
+                                addChatMessage('assistant', '🔊 음성으로 응답 중...');
+                                assistantResponseStarted = false;
+                            }
                             playAudio(event.data);
                         }
                     };
@@ -366,6 +572,12 @@ async def root():
                     console.error('Error:', error);
                     if (error.name === 'NotAllowedError') {
                         showStatus('마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크를 허용해주세요.', 'error');
+                    } else if (error.name === 'NotFoundError') {
+                        showStatus('마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.', 'error');
+                    } else if (error.name === 'NotReadableError') {
+                        showStatus('마이크가 다른 앱에서 사용 중입니다. 다른 앱을 종료해주세요.', 'error');
+                    } else if (error.name === 'TypeError') {
+                        showStatus('브라우저가 마이크 접근을 지원하지 않습니다. Chrome, Firefox, Safari 최신 버전을 사용해주세요.', 'error');
                     } else {
                         showStatus('오류가 발생했습니다: ' + error.message, 'error');
                     }
@@ -391,12 +603,24 @@ async def root():
                     audioStream = null;
                 }
                 
+                if (recognition) {
+                    try {
+                        recognition.stop();
+                    } catch (e) {
+                        console.log('Recognition already stopped');
+                    }
+                    recognition = null;
+                }
+                
                 document.getElementById('audioVisualizer').classList.remove('active');
                 document.getElementById('startBtn').style.display = 'block';
                 document.getElementById('stopBtn').style.display = 'none';
                 
                 mediaRecorder = null;
                 ws = null;
+                isUserSpeaking = false;
+                currentUserMessage = '';
+                assistantResponseStarted = false;
             }
             
             async function playAudio(audioBlob) {
@@ -416,6 +640,16 @@ async def root():
             
             // 페이지 언로드 시 정리
             window.addEventListener('beforeunload', cleanup);
+            
+            // 페이지 로드 시 브라우저 호환성 체크
+            window.addEventListener('DOMContentLoaded', () => {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    showStatus('⚠️ 이 브라우저는 마이크 접근을 지원하지 않습니다. Chrome, Firefox, Safari 최신 버전을 사용해주세요.', 'error');
+                    document.getElementById('startBtn').disabled = true;
+                } else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    showStatus('⚠️ HTTPS 연결이 필요합니다. localhost에서 테스트해주세요.', 'error');
+                }
+            });
         </script>
     </body>
     </html>
