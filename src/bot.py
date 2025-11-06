@@ -346,7 +346,7 @@ class OliveYoungVoiceBot:
         task = PipelineTask(
             pipeline,
             params=PipelineParams(
-                allow_interruptions=True,
+                allow_interruptions=False,  # TTS 완료까지 중단 방지
                 enable_metrics=True,
                 enable_usage_metrics=True,
             ),
