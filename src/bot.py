@@ -42,57 +42,78 @@ logger.add(sys.stderr, level="INFO")
 
 
 class IntentDetectionFilter(FrameProcessor):
-    """LLM으로 AI 어시스턴트 호출 의도를 판단하는 필터"""
+    """하이브리드 의도 판단 필터: 빠른 키워드 체크 + LLM 백업"""
+    
+    # 확실한 YES 키워드 (즉시 통과)
+    DEFINITE_YES_KEYWORDS = [
+        "안녕", "추천", "알려", "찾아", "도와", "질문", "문의",
+        "어디", "위치", "매장", "제품", "영업", "시간", "연락",
+        "hello", "hi", "hey", "help", "recommend", "where", "store",
+        "product", "location", "contact", "popular", "인기"
+    ]
+    
+    # 확실한 NO 패턴 (즉시 차단)
+    DEFINITE_NO_PATTERNS = [
+        "mbc 뉴스", "kbs", "sbs", "자막", "구독", "좋아요",
+        "시청", "감사합니다", "수고", "잘 먹겠습니다"
+    ]
     
     def __init__(self, openai_api_key: str):
         super().__init__()
         self.openai_api_key = openai_api_key
         
-        # 판단용 LLM (빠르고 저렴한 모델)
+        # 판단용 LLM (불명확한 경우만 사용)
         from openai import AsyncOpenAI
         self.client = AsyncOpenAI(api_key=openai_api_key)
         
         self.intent_prompt = """You are an intent classifier for an AI shopping assistant.
 
-Your job: Determine if the user is trying to talk to the AI assistant or having a side conversation.
-
 Respond with ONLY one word: "YES" or "NO"
 
-Respond "YES" if:
-- Greeting the assistant (안녕, hello, hi, hey)
-- Asking for help or information (추천, recommend, 알려줘, tell me, where, how)
-- Requesting store info (매장, store, location, hours, contact)
-- Asking about products (제품, product, 인기, popular)
-- Thanking or closing (감사, thanks, bye, 끝)
-
-Respond "NO" if:
-- Side conversation ("너는 어때?", "what do you think?", "진짜?", "really?")
-- Random remarks ("좀 느리네", "so slow", "음...", "hmm...")
-- Incomplete phrases ("이제는", "now...")
-- Not directed at assistant
-
-Examples:
-User: "안녕하세요" → YES
-User: "제품 추천해줘" → YES
-User: "좀 느리네..." → NO
-User: "진짜?" → NO
-User: "Hey, can you help?" → YES
-User: "What do you think?" → NO
+YES = User is talking to the AI assistant (asking questions, requesting help)
+NO = User is having a side conversation or not addressing the assistant
 
 User input: "{text}"
 
 Your answer (YES or NO):"""
     
-    async def _check_intent(self, text: str) -> bool:
-        """LLM으로 의도 판단"""
+    def _quick_keyword_check(self, text: str) -> str:
+        """빠른 키워드 체크 (밀리초 단위)
+        
+        Returns:
+            "YES" - 확실히 AI에게 하는 말
+            "NO" - 확실히 AI에게 하는 말이 아님
+            "UNCLEAR" - 불명확, LLM 판단 필요
+        """
+        text_lower = text.lower()
+        
+        # 1. 확실한 NO 패턴 체크 (가장 먼저)
+        for pattern in self.DEFINITE_NO_PATTERNS:
+            if pattern in text_lower:
+                return "NO"
+        
+        # 2. 확실한 YES 키워드 체크
+        for keyword in self.DEFINITE_YES_KEYWORDS:
+            if keyword in text_lower:
+                return "YES"
+        
+        # 3. 매우 짧은 문장은 보통 AI에게 하는 말이 아님
+        if len(text.strip()) < 5:
+            return "NO"
+        
+        # 4. 불명확한 경우 (LLM 필요)
+        return "UNCLEAR"
+    
+    async def _check_intent_with_llm(self, text: str) -> bool:
+        """LLM으로 의도 판단 (불명확한 경우만 호출)"""
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",  # 빠르고 저렴한 모델
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "user", "content": self.intent_prompt.format(text=text)}
                 ],
-                temperature=0,  # 결정적인 답변
-                max_tokens=5    # YES/NO만 필요
+                temperature=0,
+                max_tokens=5
             )
             
             answer = response.choices[0].message.content.strip().upper()
@@ -100,8 +121,7 @@ Your answer (YES or NO):"""
             
         except Exception as e:
             logger.error(f"❌ Intent detection error: {e}")
-            # 오류 시 안전하게 true 반환 (모든 것을 통과)
-            return True
+            return True  # 오류 시 통과
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -111,16 +131,26 @@ Your answer (YES or NO):"""
             text = frame.text
             
             if text and text.strip() and len(text.strip()) > 1:
-                # LLM으로 의도 판단
-                should_respond = await self._check_intent(text)
+                # Step 1: 빠른 키워드 체크 (밀리초)
+                quick_result = self._quick_keyword_check(text)
                 
-                if should_respond:
-                    logger.info(f"✅ [INTENT: YES] Forwarding to LLM: {text}")
+                if quick_result == "YES":
+                    logger.info(f"✅ [KEYWORD: YES] Fast pass: {text}")
                     await self.push_frame(frame, direction)
-                else:
-                    logger.info(f"⏭️ [INTENT: NO] Ignoring: {text}")
-                    # 의도가 없으면 버림
                     return
+                elif quick_result == "NO":
+                    logger.info(f"⏭️ [KEYWORD: NO] Fast reject: {text}")
+                    return
+                else:
+                    # Step 2: 불명확한 경우만 LLM 사용
+                    logger.info(f"🤔 [UNCLEAR] Checking with LLM: {text}")
+                    should_respond = await self._check_intent_with_llm(text)
+                    
+                    if should_respond:
+                        logger.info(f"✅ [LLM: YES] Forwarding to LLM: {text}")
+                        await self.push_frame(frame, direction)
+                    else:
+                        logger.info(f"⏭️ [LLM: NO] Ignoring: {text}")
             else:
                 return
         else:
