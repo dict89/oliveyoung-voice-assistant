@@ -159,18 +159,17 @@ Your answer (YES or NO):"""
 
 
 class TranscriptLogger(FrameProcessor):
-    """대화 내용을 로깅하고 WebSocket으로 전송하는 프로세서"""
+    """대화 내용을 WebSocket으로 전송하는 프로세서 (Intent:YES만 도달)"""
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         
-        # STT 결과 (사용자 음성 인식) - 최종 결과만 표시
+        # STT 결과 (사용자 음성 인식) - Intent:YES인 것만 여기 도달
         if isinstance(frame, TranscriptionFrame):
             text = frame.text
             # 빈 문자열이나 공백만 있는 경우 무시
             if text and text.strip() and len(text.strip()) > 1:
-                logger.info(f"👤 [USER]: {text}")
-                # 브라우저로 전송 (전역 WebSocket 매니저 사용)
+                # 브라우저 채팅창으로만 전송 (로그는 IntentDetectionFilter에서 이미 출력)
                 await broadcast_message({
                     "type": "transcript",
                     "speaker": "user",
@@ -245,9 +244,12 @@ class OliveYoungVoiceBot:
 1. 고객의 질문을 정확히 이해하고 관련 정보를 제공하세요
 2. 매장 위치를 물으면 주소와 함께 가까운 지하철역이나 랜드마크를 안내하세요
 3. 영업시간, 전화번호 등 구체적인 정보를 명확히 전달하세요
-4. 제품 추천 시에는 현재 인기 있는 제품을 소개하세요
+4. 제품 추천 시에는 2-3개만 간단히 소개하세요
 5. 정보가 없는 경우 솔직히 말하고 다른 방법을 제안하세요
-6. 응답은 간결하면서도 충분한 정보를 담도록 하세요 (음성 대화임을 고려)
+6. **응답은 20-30초 이내로 매우 짧고 간결하게 작성하세요 (음성 대화)**
+   - 핵심 정보만 2-3문장으로 전달
+   - 긴 설명 금지
+   - 불필요한 인사말 최소화
 7. 특수 문자는 사용하지 마세요 (음성으로 변환되므로)
 
 [중요]
@@ -321,19 +323,19 @@ class OliveYoungVoiceBot:
         user_response_aggregator = LLMUserResponseAggregator(messages)
         assistant_response_aggregator = LLMAssistantResponseAggregator(messages)
         
-        # 대화 내용 로거 (전역 WebSocket 매니저 사용)
-        transcript_logger = TranscriptLogger()
-        
         # 의도 판단 필터 (판단 LLM으로 AI 어시스턴트 호출 의도 판단)
         intent_filter = IntentDetectionFilter(self.openai_api_key)
+        
+        # 대화 내용 로거 (전역 WebSocket 매니저 사용) - Intent:YES만 기록
+        transcript_logger = TranscriptLogger()
         
         # 파이프라인 구성 (OpenAI Whisper STT 사용)
         pipeline = Pipeline(
             [
                 transport.input(),           # 오디오 입력
                 stt,                         # OpenAI Whisper (한국어/영어 자동 감지)
-                transcript_logger,           # 로깅 (모든 내용 기록)
-                intent_filter,               # 의도 판단 LLM (필터링)
+                intent_filter,               # 의도 판단 LLM (필터링) - NO는 여기서 차단
+                transcript_logger,           # 로깅 (Intent:YES만 기록)
                 user_response_aggregator,    # 사용자 메시지 집계
                 llm,                         # 응답 LLM (실제 답변)
                 tts,                         # 텍스트 → 음성
