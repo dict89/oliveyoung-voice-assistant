@@ -1,6 +1,6 @@
 """
 올리브영 음성 쇼핑 어시스턴트 봇
-Pipecat을 사용한 실시간 음성 대화 구현 (WebRTC Transport)
+Pipecat을 사용한 실시간 음성 대화 구현 (Daily.co Transport)
 """
 import asyncio
 import os
@@ -8,28 +8,158 @@ import sys
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
-from pipecat.frames.frames import LLMMessagesFrame
+from pipecat.frames.frames import (
+    EndFrame,
+    TranscriptionFrame,
+    TextFrame,
+    Frame,
+)
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
-from pipecat.services.cartesia import CartesiaSTTService, CartesiaTTSService
-from pipecat.services.openai import OpenAILLMService
-from pipecat.transports.base_transport import BaseTransport, TransportParams
-from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
+from pipecat.processors.aggregators.llm_response import (
+    LLMAssistantResponseAggregator,
+    LLMUserResponseAggregator,
+)
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.openai.stt import OpenAISTTService
+from pipecat.transports.daily.transport import DailyParams, DailyTransport
 
 from loguru import logger
 from dotenv import load_dotenv
 
 from .store_service import StoreService
+from .websocket_manager import broadcast_message
 
 # 환경 변수 로드
 load_dotenv()
 
 # 로거 설정
 logger.remove(0)
-logger.add(sys.stderr, level="DEBUG")
+logger.add(sys.stderr, level="INFO")
+
+
+class IntentDetectionFilter(FrameProcessor):
+    """LLM으로 AI 어시스턴트 호출 의도를 판단하는 필터"""
+    
+    def __init__(self, openai_api_key: str):
+        super().__init__()
+        self.openai_api_key = openai_api_key
+        
+        # 판단용 LLM (빠르고 저렴한 모델)
+        from openai import AsyncOpenAI
+        self.client = AsyncOpenAI(api_key=openai_api_key)
+        
+        self.intent_prompt = """You are an intent classifier for an AI shopping assistant.
+
+Your job: Determine if the user is trying to talk to the AI assistant or having a side conversation.
+
+Respond with ONLY one word: "YES" or "NO"
+
+Respond "YES" if:
+- Greeting the assistant (안녕, hello, hi, hey)
+- Asking for help or information (추천, recommend, 알려줘, tell me, where, how)
+- Requesting store info (매장, store, location, hours, contact)
+- Asking about products (제품, product, 인기, popular)
+- Thanking or closing (감사, thanks, bye, 끝)
+
+Respond "NO" if:
+- Side conversation ("너는 어때?", "what do you think?", "진짜?", "really?")
+- Random remarks ("좀 느리네", "so slow", "음...", "hmm...")
+- Incomplete phrases ("이제는", "now...")
+- Not directed at assistant
+
+Examples:
+User: "안녕하세요" → YES
+User: "제품 추천해줘" → YES
+User: "좀 느리네..." → NO
+User: "진짜?" → NO
+User: "Hey, can you help?" → YES
+User: "What do you think?" → NO
+
+User input: "{text}"
+
+Your answer (YES or NO):"""
+    
+    async def _check_intent(self, text: str) -> bool:
+        """LLM으로 의도 판단"""
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4o-mini",  # 빠르고 저렴한 모델
+                messages=[
+                    {"role": "user", "content": self.intent_prompt.format(text=text)}
+                ],
+                temperature=0,  # 결정적인 답변
+                max_tokens=5    # YES/NO만 필요
+            )
+            
+            answer = response.choices[0].message.content.strip().upper()
+            return answer == "YES"
+            
+        except Exception as e:
+            logger.error(f"❌ Intent detection error: {e}")
+            # 오류 시 안전하게 true 반환 (모든 것을 통과)
+            return True
+    
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        
+        # TranscriptionFrame만 필터링
+        if isinstance(frame, TranscriptionFrame):
+            text = frame.text
+            
+            if text and text.strip() and len(text.strip()) > 1:
+                # LLM으로 의도 판단
+                should_respond = await self._check_intent(text)
+                
+                if should_respond:
+                    logger.info(f"✅ [INTENT: YES] Forwarding to LLM: {text}")
+                    await self.push_frame(frame, direction)
+                else:
+                    logger.info(f"⏭️ [INTENT: NO] Ignoring: {text}")
+                    # 의도가 없으면 버림
+                    return
+            else:
+                return
+        else:
+            # 다른 프레임은 그대로 전달
+            await self.push_frame(frame, direction)
+
+
+class TranscriptLogger(FrameProcessor):
+    """대화 내용을 로깅하고 WebSocket으로 전송하는 프로세서"""
+    
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        
+        # STT 결과 (사용자 음성 인식) - 최종 결과만 표시
+        if isinstance(frame, TranscriptionFrame):
+            text = frame.text
+            # 빈 문자열이나 공백만 있는 경우 무시
+            if text and text.strip() and len(text.strip()) > 1:
+                logger.info(f"👤 [USER]: {text}")
+                # 브라우저로 전송 (전역 WebSocket 매니저 사용)
+                await broadcast_message({
+                    "type": "transcript",
+                    "speaker": "user",
+                    "text": text.strip()  # 공백 제거
+                })
+        
+        # LLM 응답 텍스트
+        elif isinstance(frame, TextFrame):
+            text = frame.text
+            if text and text.strip():
+                logger.info(f"🤖 [ASSISTANT]: {text}")
+                # 브라우저로 전송 (전역 WebSocket 매니저 사용)
+                await broadcast_message({
+                    "type": "response",
+                    "speaker": "assistant",
+                    "text": text
+                })
+        
+        await self.push_frame(frame, direction)
 
 
 class OliveYoungVoiceBot:
@@ -98,43 +228,58 @@ class OliveYoungVoiceBot:
         
         return prompt
     
-    def create_transport_params(self) -> FastAPIWebsocketParams:
-        """WebSocket Transport 파라미터를 생성합니다."""
-        return FastAPIWebsocketParams(
-            audio_in_enabled=True,
-            audio_out_enabled=True,
-            vad_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
-        )
-    
-    async def run_bot(self, transport: BaseTransport):
+    async def run(self, room_url: str, token: str = None, language: str = "ko"):
         """
         봇을 실행합니다.
         
         Args:
-            transport: Pipecat transport 인스턴스
+            room_url: Daily.co 룸 URL
+            token: 인증 토큰 (선택사항)
+            language: STT 언어 설정 (ko/en, 기본값: ko)
         """
-        logger.info("Starting Olive Young Voice Assistant Bot")
+        logger.info(f"Starting Olive Young Voice Assistant Bot (Language: {language})")
         
-        # STT 서비스 (음성 → 텍스트) - Cartesia
-        stt = CartesiaSTTService(
-            api_key=self.cartesia_api_key,
-            language="ko"  # 한국어 설정
+        # Daily transport 설정
+        transport = DailyTransport(
+            room_url,
+            token,
+            "올리브영 쇼핑 어시스턴트",
+            DailyParams(
+                audio_in_enabled=True,
+                audio_out_enabled=True,
+                transcription_enabled=False,  # OpenAI Whisper만 사용 (Daily transcription 끔)
+                vad_enabled=True,
+                vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2))
+            ),
+        )
+        
+        # STT 서비스 - OpenAI Whisper (한국어 인식 최고!)
+        stt = OpenAISTTService(
+            api_key=self.openai_api_key,
+            model="whisper-1",
+            language=language  # ko/en - Whisper는 한국어 인식이 매우 정확
         )
         
         # TTS 서비스 (텍스트 → 음성) - Cartesia
+        # 한국어 여성 음성 옵션:
+        # - 248be419-c632-4f23-adf1-5324ed7dbf1d (Jiwon - 젊고 활기찬, 명확함) ✓
+        # - a8a1eb38-5f15-4c1d-8722-7ac0f329727d (Soyeon - 부드럽고 자연스러운)
+        # 영어 여성 음성 옵션:
+        # - 21b81c14-f85b-436d-aff5-43f2e788ecf8 (Sarah - 명확하고 활기찬) ✓
+        # - 02070f63-4fd3-4b03-a8cf-ac1e4a1e5c4c (Natasha - 자연스럽고 친근한)
+        voice_id = "248be419-c632-4f23-adf1-5324ed7dbf1d" if language == "ko" else "21b81c14-f85b-436d-aff5-43f2e788ecf8"
         tts = CartesiaTTSService(
             api_key=self.cartesia_api_key,
-            voice_id="a167e0f3-df7e-4d52-a9c3-f949145efdab",  # 한국어 음성 (필요시 변경)
+            voice_id=voice_id,  # 명확하고 활기찬 여성 음성
         )
         
         # LLM 서비스 (대화 처리) - OpenAI
         llm = OpenAILLMService(
             api_key=self.openai_api_key,
-            model="gpt-4o-mini"  # 또는 "gpt-4o"
+            model="gpt-4o-mini"
         )
         
-        # 대화 컨텍스트 초기화
+        # 메시지 초기화
         messages = [
             {
                 "role": "system",
@@ -142,19 +287,28 @@ class OliveYoungVoiceBot:
             }
         ]
         
-        context = LLMContext(messages)
-        context_aggregator = LLMContextAggregatorPair(context)
+        # 사용자/어시스턴트 응답 집계기
+        user_response_aggregator = LLMUserResponseAggregator(messages)
+        assistant_response_aggregator = LLMAssistantResponseAggregator(messages)
         
-        # 파이프라인 구성
+        # 대화 내용 로거 (전역 WebSocket 매니저 사용)
+        transcript_logger = TranscriptLogger()
+        
+        # 의도 판단 필터 (판단 LLM으로 AI 어시스턴트 호출 의도 판단)
+        intent_filter = IntentDetectionFilter(self.openai_api_key)
+        
+        # 파이프라인 구성 (OpenAI Whisper STT 사용)
         pipeline = Pipeline(
             [
                 transport.input(),           # 오디오 입력
-                stt,                         # 음성 → 텍스트
-                context_aggregator.user(),   # 사용자 메시지 집계
-                llm,                         # LLM 처리
+                stt,                         # OpenAI Whisper (한국어/영어 자동 감지)
+                transcript_logger,           # 로깅 (모든 내용 기록)
+                intent_filter,               # 의도 판단 LLM (필터링)
+                user_response_aggregator,    # 사용자 메시지 집계
+                llm,                         # 응답 LLM (실제 답변)
                 tts,                         # 텍스트 → 음성
                 transport.output(),          # 오디오 출력
-                context_aggregator.assistant()  # 어시스턴트 응답 집계
+                assistant_response_aggregator  # 어시스턴트 응답 집계
             ]
         )
         
@@ -168,23 +322,23 @@ class OliveYoungVoiceBot:
             ),
         )
         
-        # 클라이언트 연결 이벤트 핸들러
-        @transport.event_handler("on_client_connected")
-        async def on_client_connected(transport, client):
-            logger.info("Client connected")
+        # 첫 참가자 입장 이벤트 핸들러
+        @transport.event_handler("on_first_participant_joined")
+        async def on_first_participant_joined(transport, participant):
+            logger.info(f"✅ First participant joined: {participant['id']}")
+            # OpenAI Whisper 사용하므로 Daily transcription 불필요
             # 초기 인사말
-            initial_message = {
+            logger.info("Sending initial greeting")
+            messages.append({
                 "role": "system",
                 "content": "안녕하세요! 올리브영 쇼핑 어시스턴트입니다. 매장 정보나 제품 추천이 필요하시면 말씀해 주세요."
-            }
-            messages.append(initial_message)
-            await task.queue_frames([LLMMessagesFrame(messages)])
+            })
         
-        # 클라이언트 연결 해제 이벤트 핸들러
-        @transport.event_handler("on_client_disconnected")
-        async def on_client_disconnected(transport, client):
-            logger.info("Client disconnected")
-            await task.cancel()
+        # 참가자 퇴장 이벤트 핸들러
+        @transport.event_handler("on_participant_left")
+        async def on_participant_left(transport, participant, reason):
+            logger.info(f"❌ Participant left: {participant}")
+            await task.queue_frame(EndFrame())
         
         # 봇 실행
         runner = PipelineRunner()
@@ -193,27 +347,13 @@ class OliveYoungVoiceBot:
 
 async def main():
     """메인 실행 함수 (테스트용)"""
-    from fastapi import FastAPI, WebSocket
-    import uvicorn
+    room_url = os.getenv("DAILY_ROOM_URL")
+    if not room_url:
+        logger.error("DAILY_ROOM_URL이 설정되지 않았습니다.")
+        return
     
-    app = FastAPI()
     bot = OliveYoungVoiceBot()
-    
-    @app.websocket("/ws")
-    async def websocket_endpoint(websocket: WebSocket):
-        await websocket.accept()
-        
-        transport_params = bot.create_transport_params()
-        transport = FastAPIWebsocketTransport(
-            websocket=websocket,
-            params=transport_params
-        )
-        
-        await bot.run_bot(transport)
-    
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000)
-    server = uvicorn.Server(config)
-    await server.serve()
+    await bot.run(room_url)
 
 
 if __name__ == "__main__":

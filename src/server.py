@@ -1,19 +1,22 @@
 """
-FastAPI 서버 - WebSocket 기반 음성 챗봇
+FastAPI 서버 - Daily.co 룸 생성 및 봇 관리
 """
 import os
 import asyncio
 from typing import Optional
+from datetime import datetime, timedelta
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import aiohttp
+from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from pydantic import BaseModel
+import json
 from loguru import logger
 from dotenv import load_dotenv
 
-from pipecat.transports.websocket.fastapi import FastAPIWebsocketTransport
-
 from .bot import OliveYoungVoiceBot
+from . import websocket_manager
 
 # 환경 변수 로드
 load_dotenv()
@@ -28,6 +31,98 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Daily API 설정
+DAILY_API_KEY = os.getenv("DAILY_API_KEY")
+DAILY_API_URL = "https://api.daily.co/v1"
+
+
+class RoomRequest(BaseModel):
+    """룸 생성 요청"""
+    duration_minutes: Optional[int] = 30
+    
+
+class RoomResponse(BaseModel):
+    """룸 생성 응답"""
+    room_url: str
+    room_name: str
+    token: Optional[str] = None
+    expires: str
+
+
+async def create_daily_room(duration_minutes: int = 30) -> dict:
+    """
+    Daily.co 룸을 생성합니다.
+    
+    Args:
+        duration_minutes: 룸 유효 시간 (분)
+        
+    Returns:
+        룸 정보 딕셔너리
+    """
+    if not DAILY_API_KEY:
+        raise ValueError("DAILY_API_KEY가 설정되지 않았습니다.")
+    
+    # 만료 시간 계산 (UTC)
+    from datetime import timezone
+    expires = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
+    
+    headers = {
+        "Authorization": f"Bearer {DAILY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # 룸 설정
+    room_config = {
+        "properties": {
+            "exp": int(expires.timestamp()),
+            "enable_chat": True,
+            "enable_transcription": False,  # Cartesia STT 사용
+            "enable_recording": False,
+            "max_participants": 2,  # 사용자 1명 + 봇 1명
+        }
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{DAILY_API_URL}/rooms",
+            headers=headers,
+            json=room_config
+        ) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                logger.error(f"Failed to create room: {error_text}")
+                raise HTTPException(status_code=500, detail="룸 생성에 실패했습니다.")
+            
+            room_data = await response.json()
+            
+            # 봇용 token 생성 (transcription 권한 필요)
+            token_config = {
+                "properties": {
+                    "room_name": room_data["name"],
+                    "is_owner": True,
+                    "exp": int(expires.timestamp())
+                }
+            }
+            
+            async with session.post(
+                f"{DAILY_API_URL}/meeting-tokens",
+                headers=headers,
+                json=token_config
+            ) as token_response:
+                if token_response.status == 200:
+                    token_data = await token_response.json()
+                    bot_token = token_data["token"]
+                else:
+                    logger.warning("Failed to create token, proceeding without it")
+                    bot_token = None
+            
+            return {
+                "room_url": room_data["url"],
+                "room_name": room_data["name"],
+                "token": bot_token,
+                "expires": expires.isoformat()
+            }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -107,18 +202,6 @@ async def root():
                 border: 1px solid #f5c6cb;
             }
             
-            .status.recording {
-                background: #fff3cd;
-                color: #856404;
-                border: 1px solid #ffeaa7;
-                animation: pulse 2s infinite;
-            }
-            
-            @keyframes pulse {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.7; }
-            }
-            
             .btn {
                 display: block;
                 width: 100%;
@@ -146,12 +229,9 @@ async def root():
                 transform: none;
             }
             
-            .btn.stop {
-                background: #e74c3c;
-            }
-            
-            .btn.stop:hover:not(:disabled) {
-                background: #c0392b;
+            #videoContainer {
+                margin: 20px 0;
+                display: none;
             }
             
             .feature-list {
@@ -210,110 +290,6 @@ async def root():
                 content: "💬 ";
                 margin-right: 8px;
             }
-            
-            .audio-visualizer {
-                height: 60px;
-                background: #f8f9fa;
-                border-radius: 10px;
-                margin: 20px 0;
-                display: none;
-                justify-content: center;
-                align-items: center;
-                gap: 4px;
-                padding: 10px;
-            }
-            
-            .audio-visualizer.active {
-                display: flex;
-            }
-            
-            .bar {
-                width: 4px;
-                height: 20px;
-                background: #667eea;
-                border-radius: 2px;
-                animation: wave 1s ease-in-out infinite;
-            }
-            
-            .bar:nth-child(2) { animation-delay: 0.1s; }
-            .bar:nth-child(3) { animation-delay: 0.2s; }
-            .bar:nth-child(4) { animation-delay: 0.3s; }
-            .bar:nth-child(5) { animation-delay: 0.4s; }
-            
-            @keyframes wave {
-                0%, 100% { height: 20px; }
-                50% { height: 40px; }
-            }
-            
-            .chat-container {
-                background: #f8f9fa;
-                border-radius: 10px;
-                padding: 20px;
-                margin: 20px 0;
-                max-height: 400px;
-                overflow-y: auto;
-                display: none;
-            }
-            
-            .chat-container.active {
-                display: block;
-            }
-            
-            .chat-message {
-                margin: 10px 0;
-                padding: 12px 16px;
-                border-radius: 10px;
-                max-width: 80%;
-                word-wrap: break-word;
-                animation: fadeIn 0.3s ease-in;
-            }
-            
-            @keyframes fadeIn {
-                from { opacity: 0; transform: translateY(10px); }
-                to { opacity: 1; transform: translateY(0); }
-            }
-            
-            .chat-message.user {
-                background: #667eea;
-                color: white;
-                margin-left: auto;
-                text-align: right;
-            }
-            
-            .chat-message.assistant {
-                background: white;
-                color: #333;
-                border: 1px solid #dee2e6;
-            }
-            
-            .chat-message .timestamp {
-                font-size: 0.75em;
-                opacity: 0.7;
-                margin-top: 4px;
-            }
-            
-            .chat-message .speaker {
-                font-weight: bold;
-                margin-bottom: 4px;
-            }
-            
-            .chat-container::-webkit-scrollbar {
-                width: 8px;
-            }
-            
-            .chat-container::-webkit-scrollbar-track {
-                background: #f1f1f1;
-                border-radius: 10px;
-            }
-            
-            .chat-container::-webkit-scrollbar-thumb {
-                background: #667eea;
-                border-radius: 10px;
-            }
-            
-            .chat-container::-webkit-scrollbar-thumb:hover {
-                background: #5568d3;
-            }
         </style>
     </head>
     <body>
@@ -323,21 +299,22 @@ async def root():
             
             <div id="status" class="status"></div>
             
-            <div id="audioVisualizer" class="audio-visualizer">
-                <div class="bar"></div>
-                <div class="bar"></div>
-                <div class="bar"></div>
-                <div class="bar"></div>
-                <div class="bar"></div>
+            <!-- 언어 선택 -->
+            <div style="margin: 20px 0; text-align: center;">
+                <label style="font-size: 16px; margin-right: 10px;">🌐 언어 선택:</label>
+                <label style="margin-right: 20px;">
+                    <input type="radio" name="language" value="ko" checked> 한국어
+                </label>
+                <label>
+                    <input type="radio" name="language" value="en"> English
+                </label>
             </div>
             
             <button id="startBtn" class="btn" onclick="startConversation()">
                 🎙️ 대화 시작하기
             </button>
             
-            <button id="stopBtn" class="btn stop" onclick="stopConversation()" style="display: none;">
-                🛑 대화 종료
-            </button>
+            <div id="videoContainer"></div>
             
             <div id="chatContainer" class="chat-container">
                 <h3 style="margin: 0 0 15px 0; color: #667eea;">💬 대화 내역</h3>
@@ -364,15 +341,9 @@ async def root():
             </div>
         </div>
         
+        <script src="https://unpkg.com/@daily-co/daily-js"></script>
         <script>
-            let ws = null;
-            let mediaRecorder = null;
-            let audioContext = null;
-            let audioStream = null;
-            let recognition = null;
-            let isUserSpeaking = false;
-            let currentUserMessage = '';
-            let assistantResponseStarted = false;
+            let callFrame = null;
             
             function showStatus(message, type) {
                 const status = document.getElementById('status');
@@ -381,13 +352,8 @@ async def root():
                 status.style.display = 'block';
             }
             
-            function hideStatus() {
-                document.getElementById('status').style.display = 'none';
-            }
-            
             function addChatMessage(speaker, message) {
                 const chatHistory = document.getElementById('chatHistory');
-                const chatContainer = document.getElementById('chatContainer');
                 
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `chat-message ${speaker}`;
@@ -402,7 +368,6 @@ async def root():
                 `;
                 
                 chatHistory.appendChild(messageDiv);
-                chatContainer.classList.add('active');
                 
                 // 스크롤을 맨 아래로
                 chatHistory.scrollTop = chatHistory.scrollHeight;
@@ -410,246 +375,165 @@ async def root():
             
             function clearChat() {
                 const chatHistory = document.getElementById('chatHistory');
-                const chatContainer = document.getElementById('chatContainer');
                 chatHistory.innerHTML = '';
-                chatContainer.classList.remove('active');
-            }
-            
-            function initSpeechRecognition() {
-                // Web Speech API 지원 확인
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!SpeechRecognition) {
-                    console.log('Speech Recognition not supported');
-                    return null;
-                }
-                
-                recognition = new SpeechRecognition();
-                recognition.lang = 'ko-KR';
-                recognition.continuous = true;
-                recognition.interimResults = true;
-                
-                recognition.onresult = (event) => {
-                    let interimTranscript = '';
-                    let finalTranscript = '';
-                    
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        const transcript = event.results[i][0].transcript;
-                        if (event.results[i].isFinal) {
-                            finalTranscript += transcript;
-                        } else {
-                            interimTranscript += transcript;
-                        }
-                    }
-                    
-                    if (finalTranscript) {
-                        addChatMessage('user', finalTranscript);
-                        currentUserMessage = '';
-                        isUserSpeaking = false;
-                        
-                        // 어시스턴트 응답 대기 표시
-                        setTimeout(() => {
-                            if (!assistantResponseStarted) {
-                                assistantResponseStarted = true;
-                            }
-                        }, 500);
-                    }
-                };
-                
-                recognition.onerror = (event) => {
-                    console.error('Speech recognition error:', event.error);
-                };
-                
-                return recognition;
             }
             
             async function startConversation() {
+                const btn = document.getElementById('startBtn');
+                btn.disabled = true;
+                showStatus('룸을 생성하는 중...', 'info');
+                
                 try {
-                    // 브라우저 호환성 체크
-                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                        showStatus('이 브라우저는 마이크 접근을 지원하지 않습니다. Chrome, Firefox, Safari 최신 버전을 사용해주세요.', 'error');
-                        return;
-                    }
-                    
-                    // HTTPS 체크 (localhost 제외)
-                    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                        showStatus('보안을 위해 HTTPS 연결이 필요합니다. localhost에서 테스트해주세요.', 'error');
-                        return;
-                    }
-                    
-                    showStatus('마이크 권한을 요청하고 있습니다...', 'info');
-                    
-                    // 마이크 접근 권한 요청
-                    audioStream = await navigator.mediaDevices.getUserMedia({ 
-                        audio: {
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true
-                        } 
+                    // 룸 생성 요청
+                    const response = await fetch('/api/create-room', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            duration_minutes: 30
+                        })
                     });
                     
-                    showStatus('서버에 연결하고 있습니다...', 'info');
+                    if (!response.ok) {
+                        throw new Error('룸 생성 실패');
+                    }
                     
-                    // WebSocket 연결
-                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+                    const data = await response.json();
+                    showStatus('연결 중... 잠시만 기다려주세요.', 'info');
                     
-                    ws.onopen = () => {
-                        showStatus('🎤 연결되었습니다! 말씀해 주세요.', 'recording');
-                        document.getElementById('audioVisualizer').classList.add('active');
-                        document.getElementById('startBtn').style.display = 'none';
-                        document.getElementById('stopBtn').style.display = 'block';
-                        clearChat();
-                        
-                        // 초기 인사말 추가
-                        addChatMessage('assistant', '안녕하세요! 올리브영 쇼핑 어시스턴트입니다. 매장 정보나 제품 추천이 필요하시면 말씀해 주세요.');
-                        
-                        // Web Speech API 시작 (대화 내용 표시용)
-                        recognition = initSpeechRecognition();
-                        if (recognition) {
-                            try {
-                                recognition.start();
-                            } catch (e) {
-                                console.log('Recognition already started');
+                    // Daily.co 클라이언트 생성
+                    console.log('Creating Daily iframe...');
+                    callFrame = DailyIframe.createFrame(
+                        document.getElementById('videoContainer'),
+                        {
+                            showLeaveButton: true,
+                            showFullscreenButton: false,
+                            iframeStyle: {
+                                width: '100%',
+                                height: '500px',
+                                border: 'none',
+                                borderRadius: '10px'
                             }
                         }
+                    );
+                    
+                    document.getElementById('videoContainer').style.display = 'block';
+                    
+                    // 룸 참여 (사용자 먼저) - 타임아웃 추가
+                    console.log('Joining room:', data.room_url);
+                    
+                    const joinPromise = callFrame.join({ url: data.room_url });
+                    const timeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Daily.co 연결 타임아웃 (10초)')), 10000)
+                    );
+                    
+                    const joinResult = await Promise.race([joinPromise, timeoutPromise]);
+                    console.log('Join result:', joinResult);
+                    
+                    showStatus('봇이 참여하는 중... 잠시만 기다려주세요.', 'info');
+                    
+                    // 선택된 언어 가져오기
+                    const selectedLanguage = document.querySelector('input[name="language"]:checked').value;
+                    console.log('Selected language:', selectedLanguage);
+                    
+                    // 사용자가 참여한 후 봇 시작 (token + language 전달)
+                    await fetch('/api/start-bot', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            room_url: data.room_url,
+                            room_name: data.room_name,
+                            token: data.token,
+                            language: selectedLanguage
+                        })
+                    });
+                    
+                    // 잠시 대기 후 성공 메시지
+                    setTimeout(() => {
+                        showStatus('✅ 연결되었습니다! 마이크를 켜고 대화를 시작하세요.', 'success');
+                    }, 2000);
+                    
+                    // 채팅창 초기화
+                    clearChat();
+                    addChatMessage('assistant', '안녕하세요! 올리브영 쇼핑 어시스턴트입니다. 매장 정보나 제품 추천이 필요하시면 말씀해 주세요.');
+                    
+                    // WebSocket 연결 (OpenAI Whisper 결과 수신용)
+                    const chatProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const chatWs = new WebSocket(`${chatProtocol}//${window.location.host}/api/chat-ws`);
+                    
+                    chatWs.onopen = () => {
+                        console.log('✅ Chat WebSocket connected');
                         
-                        // MediaRecorder 시작 (실제 음성 전송용)
-                        mediaRecorder = new MediaRecorder(audioStream, {
-                            mimeType: 'audio/webm'
-                        });
-                        
-                        mediaRecorder.ondataavailable = (event) => {
-                            if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                                ws.send(event.data);
+                        // 연결 유지를 위한 ping (5초마다)
+                        setInterval(() => {
+                            if (chatWs.readyState === WebSocket.OPEN) {
+                                chatWs.send('ping');
                             }
-                        };
-                        
-                        mediaRecorder.start(100); // 100ms마다 데이터 전송
+                        }, 5000);
                     };
                     
-                    ws.onmessage = async (event) => {
-                        // JSON 메시지 처리 (텍스트)
-                        if (typeof event.data === 'string') {
-                            try {
-                                const data = JSON.parse(event.data);
-                                if (data.type === 'transcript') {
-                                    // 사용자 음성 인식 결과
-                                    if (data.text && data.text.trim()) {
-                                        addChatMessage('user', data.text);
-                                    }
-                                } else if (data.type === 'response') {
-                                    // 어시스턴트 응답 텍스트
-                                    if (data.text && data.text.trim()) {
-                                        addChatMessage('assistant', data.text);
-                                    }
-                                }
-                            } catch (e) {
-                                console.log('Non-JSON message:', event.data);
+                    chatWs.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            console.log('📝 Received from server:', data);
+                            
+                            if (data.type === 'transcript' && data.speaker === 'user' && data.text) {
+                                console.log('✅ Adding user message:', data.text);
+                                addChatMessage('user', data.text);
+                            } else if (data.type === 'response' && data.speaker === 'assistant' && data.text) {
+                                console.log('✅ Adding assistant message:', data.text);
+                                addChatMessage('assistant', data.text);
                             }
+                        } catch (e) {
+                            console.error('Error parsing chat message:', e);
                         }
-                        // Blob 메시지 처리 (오디오)
-                        else if (event.data instanceof Blob) {
-                            // 첫 오디오 응답이 올 때 어시스턴트 메시지 표시
-                            if (assistantResponseStarted) {
-                                addChatMessage('assistant', '🔊 음성으로 응답 중...');
-                                assistantResponseStarted = false;
-                            }
-                            playAudio(event.data);
-                        }
                     };
                     
-                    ws.onerror = (error) => {
-                        console.error('WebSocket error:', error);
-                        showStatus('연결 오류가 발생했습니다.', 'error');
+                    chatWs.onerror = (error) => {
+                        console.error('Chat WebSocket error:', error);
                     };
                     
-                    ws.onclose = () => {
-                        showStatus('연결이 종료되었습니다.', 'info');
-                        cleanup();
+                    chatWs.onclose = () => {
+                        console.log('Chat WebSocket closed');
                     };
+                    
+                    // 통화 종료 이벤트 처리
+                    callFrame.on('left-meeting', () => {
+                        document.getElementById('videoContainer').style.display = 'none';
+                        btn.disabled = false;
+                        showStatus('대화가 종료되었습니다.', 'info');
+                    });
                     
                 } catch (error) {
                     console.error('Error:', error);
-                    if (error.name === 'NotAllowedError') {
-                        showStatus('마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크를 허용해주세요.', 'error');
-                    } else if (error.name === 'NotFoundError') {
-                        showStatus('마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.', 'error');
-                    } else if (error.name === 'NotReadableError') {
-                        showStatus('마이크가 다른 앱에서 사용 중입니다. 다른 앱을 종료해주세요.', 'error');
-                    } else if (error.name === 'TypeError') {
-                        showStatus('브라우저가 마이크 접근을 지원하지 않습니다. Chrome, Firefox, Safari 최신 버전을 사용해주세요.', 'error');
-                    } else {
-                        showStatus('오류가 발생했습니다: ' + error.message, 'error');
+                    
+                    // 에러 타입별 처리
+                    let errorMessage = '오류가 발생했습니다: ' + error.message;
+                    
+                    if (error.message.includes('타임아웃')) {
+                        errorMessage = 'Daily.co 연결 시간 초과. 인터넷 연결을 확인하거나 다시 시도해주세요.';
+                    } else if (error.message.includes('룸 생성')) {
+                        errorMessage = 'Daily.co API 키를 확인해주세요. .env 파일에 DAILY_API_KEY가 설정되어 있나요?';
                     }
-                    cleanup();
-                }
-            }
-            
-            function stopConversation() {
-                if (ws) {
-                    ws.close();
-                }
-                cleanup();
-                showStatus('대화가 종료되었습니다.', 'info');
-            }
-            
-            function cleanup() {
-                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                    mediaRecorder.stop();
-                }
-                
-                if (audioStream) {
-                    audioStream.getTracks().forEach(track => track.stop());
-                    audioStream = null;
-                }
-                
-                if (recognition) {
-                    try {
-                        recognition.stop();
-                    } catch (e) {
-                        console.log('Recognition already stopped');
+                    
+                    showStatus(errorMessage, 'error');
+                    btn.disabled = false;
+                    
+                    // Daily iframe 정리
+                    if (callFrame) {
+                        try {
+                            await callFrame.destroy();
+                        } catch (e) {
+                            console.log('Error destroying frame:', e);
+                        }
+                        callFrame = null;
                     }
-                    recognition = null;
+                    document.getElementById('videoContainer').style.display = 'none';
                 }
-                
-                document.getElementById('audioVisualizer').classList.remove('active');
-                document.getElementById('startBtn').style.display = 'block';
-                document.getElementById('stopBtn').style.display = 'none';
-                
-                mediaRecorder = null;
-                ws = null;
-                isUserSpeaking = false;
-                currentUserMessage = '';
-                assistantResponseStarted = false;
             }
-            
-            async function playAudio(audioBlob) {
-                const audioUrl = URL.createObjectURL(audioBlob);
-                const audio = new Audio(audioUrl);
-                
-                try {
-                    await audio.play();
-                } catch (error) {
-                    console.error('Error playing audio:', error);
-                }
-                
-                audio.onended = () => {
-                    URL.revokeObjectURL(audioUrl);
-                };
-            }
-            
-            // 페이지 언로드 시 정리
-            window.addEventListener('beforeunload', cleanup);
-            
-            // 페이지 로드 시 브라우저 호환성 체크
-            window.addEventListener('DOMContentLoaded', () => {
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    showStatus('⚠️ 이 브라우저는 마이크 접근을 지원하지 않습니다. Chrome, Firefox, Safari 최신 버전을 사용해주세요.', 'error');
-                    document.getElementById('startBtn').disabled = true;
-                } else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                    showStatus('⚠️ HTTPS 연결이 필요합니다. localhost에서 테스트해주세요.', 'error');
-                }
-            });
         </script>
     </body>
     </html>
@@ -657,35 +541,71 @@ async def root():
     return HTMLResponse(content=html_content)
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@app.post("/api/create-room", response_model=RoomResponse)
+async def create_room(request: RoomRequest):
     """
-    WebSocket 엔드포인트 - 음성 챗봇 연결
+    Daily.co 룸을 생성합니다.
     """
+    try:
+        room_data = await create_daily_room(request.duration_minutes)
+        return RoomResponse(**room_data)
+    except Exception as e:
+        logger.error(f"Error creating room: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BotStartRequest(BaseModel):
+    """봇 시작 요청"""
+    room_url: str
+    room_name: str
+    token: Optional[str] = None
+    language: Optional[str] = "ko"  # 기본값: 한국어 (ko/en)
+
+
+@app.post("/api/start-bot")
+async def start_bot(request: BotStartRequest):
+    """
+    봇을 시작합니다.
+    """
+    try:
+        # 백그라운드에서 봇 실행 (언어 설정 전달)
+        bot = OliveYoungVoiceBot()
+        asyncio.create_task(bot.run(request.room_url, request.token, request.language))
+        
+        return JSONResponse(
+            content={
+                "status": "started",
+                "room_name": request.room_name,
+                "message": "봇이 시작되었습니다."
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.websocket("/api/chat-ws")
+async def chat_websocket(websocket: WebSocket):
+    """채팅 메시지 전송용 WebSocket"""
+    from fastapi import WebSocketDisconnect
+    
     await websocket.accept()
-    logger.info("WebSocket connection accepted")
+    client_id = id(websocket)
+    websocket_manager.add_websocket(client_id, websocket)
     
     try:
-        # 봇 인스턴스 생성
-        bot = OliveYoungVoiceBot()
-        
-        # Transport 파라미터 생성
-        transport_params = bot.create_transport_params()
-        
-        # Transport 생성
-        transport = FastAPIWebsocketTransport(
-            websocket=websocket,
-            params=transport_params
-        )
-        
-        # 봇 실행
-        await bot.run_bot(transport)
-        
+        # 연결 유지 (메시지 수신 대기)
+        while True:
+            data = await websocket.receive_text()
+            # ping 메시지는 무시
+            if data != 'ping':
+                logger.debug(f"Received from client {client_id}: {data}")
     except WebSocketDisconnect:
-        logger.info("WebSocket disconnected")
+        logger.info(f"❌ Chat WebSocket disconnected: {client_id}")
     except Exception as e:
-        logger.error(f"Error in WebSocket connection: {e}")
-        await websocket.close()
+        logger.error(f"❌ Chat WebSocket error {client_id}: {e}")
+    finally:
+        websocket_manager.remove_websocket(client_id)
 
 
 @app.get("/api/health")

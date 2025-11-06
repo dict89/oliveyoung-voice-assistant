@@ -5,7 +5,7 @@ description = "올리브영 매장 정보 제공 음성 쇼핑 어시스턴트"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pipecat-ai[openai,cartesia,silero,websocket]>=0.0.92",
+    "pipecat-ai[daily,openai,cartesia,silero]>=0.0.92",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "python-dotenv>=1.0.0",
@@ -17,8 +17,11 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]
