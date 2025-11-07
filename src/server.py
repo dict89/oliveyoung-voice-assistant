@@ -455,27 +455,49 @@ async def root():
                 try {
                     // 로컬 비디오 스트림 가져오기 (한 번만)
                     localVideoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: true, 
+                        video: { width: 640, height: 480 }, 
                         audio: false 
                     });
                     
-                    // 숨겨진 video element 생성
+                    // video element 생성 (디버깅용으로 보이게 설정)
                     localVideoElement = document.createElement('video');
                     localVideoElement.srcObject = localVideoStream;
                     localVideoElement.autoplay = true;
                     localVideoElement.muted = true;
+                    localVideoElement.playsInline = true;  // iOS 호환성
                     localVideoElement.width = 640;
                     localVideoElement.height = 480;
-                    localVideoElement.style.display = 'none';
+                    
+                    // 디버깅용: 작은 미리보기로 표시
+                    localVideoElement.style.position = 'fixed';
+                    localVideoElement.style.bottom = '20px';
+                    localVideoElement.style.right = '20px';
+                    localVideoElement.style.width = '160px';
+                    localVideoElement.style.height = '120px';
+                    localVideoElement.style.border = '2px solid #667eea';
+                    localVideoElement.style.borderRadius = '10px';
+                    localVideoElement.style.zIndex = '999';
                     document.body.appendChild(localVideoElement);
                     
                     // video가 재생될 때까지 대기
-                    await new Promise((resolve) => {
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => reject(new Error('Video load timeout')), 5000);
+                        
                         localVideoElement.onloadeddata = () => {
-                            console.log('Local video stream ready');
+                            clearTimeout(timeout);
+                            console.log(`✅ Local video stream ready: ${localVideoElement.videoWidth}x${localVideoElement.videoHeight}`);
                             resolve();
                         };
+                        
+                        localVideoElement.onerror = (e) => {
+                            clearTimeout(timeout);
+                            reject(e);
+                        };
                     });
+                    
+                    // 재생 시작
+                    await localVideoElement.play();
+                    console.log('✅ Video playing');
                     
                     return true;
                 } catch (error) {
@@ -501,13 +523,32 @@ async def root():
             }
             
             async function detectFace(videoElement) {
-                if (!blazefaceModel || !videoElement) {
-                    console.warn('BlazeFace model or video not ready');
+                if (!blazefaceModel) {
+                    console.warn('BlazeFace model not ready');
+                    return false;
+                }
+                
+                if (!videoElement) {
+                    console.warn('Video element not ready');
+                    return false;
+                }
+                
+                // 비디오 상태 확인
+                if (videoElement.readyState < 2) {
+                    console.warn(`Video not ready: readyState=${videoElement.readyState}`);
+                    return false;
+                }
+                
+                if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+                    console.warn(`Video has no dimensions: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
                     return false;
                 }
                 
                 try {
+                    // BlazeFace 예측
                     const predictions = await blazefaceModel.estimateFaces(videoElement, false);
+                    
+                    console.log(`🔍 BlazeFace predictions: ${predictions.length} face(s) detected`);
                     
                     if (predictions.length > 0) {
                         const face = predictions[0];
@@ -532,7 +573,7 @@ async def root():
                         
                         return isFrontal;
                     } else {
-                        console.log('❌ No face detected');
+                        console.log(`❌ No face detected (video: ${videoElement.videoWidth}x${videoElement.videoHeight}, playing: ${!videoElement.paused})`);
                         return false;
                     }
                 } catch (error) {
