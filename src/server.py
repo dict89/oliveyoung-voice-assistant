@@ -501,7 +501,10 @@ async def root():
             }
             
             async function detectFace(videoElement) {
-                if (!blazefaceModel || !videoElement) return false;
+                if (!blazefaceModel || !videoElement) {
+                    console.warn('BlazeFace model or video not ready');
+                    return false;
+                }
                 
                 try {
                     const predictions = await blazefaceModel.estimateFaces(videoElement, false);
@@ -522,15 +525,16 @@ async def root():
                         const faceWidth = face.bottomRight[0] - face.topLeft[0];
                         const faceHeight = face.bottomRight[1] - face.topLeft[1];
                         
-                        // 정면 판단: 얼굴 크기가 충분히 크고, 눈 사이 거리가 적당함
-                        const isFrontal = faceWidth > 80 && faceHeight > 80 && eyeDistance > 30;
+                        // 정면 판단: 얼굴 크기가 일정 이상 (임계값 완화)
+                        const isFrontal = faceWidth > 50 && faceHeight > 50 && eyeDistance > 20;
                         
-                        console.log(`Face detected: width=${faceWidth.toFixed(0)}, height=${faceHeight.toFixed(0)}, eyeDist=${eyeDistance.toFixed(0)}, frontal=${isFrontal}`);
+                        console.log(`✅ Face detected: width=${faceWidth.toFixed(0)}, height=${faceHeight.toFixed(0)}, eyeDist=${eyeDistance.toFixed(0)}, frontal=${isFrontal}`);
                         
                         return isFrontal;
+                    } else {
+                        console.log('❌ No face detected');
+                        return false;
                     }
-                    
-                    return false;
                 } catch (error) {
                     console.error('Face detection error:', error);
                     return false;
@@ -552,13 +556,23 @@ async def root():
                 
                 // 1초에 1번 체크
                 faceDetectionInterval = setInterval(async () => {
-                    if (!callFrame || !localVideoElement) return;
+                    if (!callFrame || !localVideoElement) {
+                        console.warn('callFrame or localVideoElement not ready');
+                        return;
+                    }
                     
                     try {
                         const participants = callFrame.participants();
                         const localParticipant = participants.local;
                         
-                        if (!localParticipant || !localParticipant.video) {
+                        if (!localParticipant) {
+                            console.warn('Local participant not found');
+                            return;
+                        }
+                        
+                        console.log(`👤 Local participant video: ${localParticipant.video ? 'ON' : 'OFF'}`);
+                        
+                        if (!localParticipant.video) {
                             isFacingForward = false;
                             updateFaceStatus(false);
                             // Daily.co 마이크 mute
@@ -570,13 +584,20 @@ async def root():
                         const wasFacing = isFacingForward;
                         isFacingForward = await detectFace(localVideoElement);
                         
+                        console.log(`📊 Face detection result: wasFacing=${wasFacing}, isFacingForward=${isFacingForward}`);
+                        
                         // 상태 업데이트
                         updateFaceStatus(isFacingForward);
                         
                         // Daily.co 마이크 제어 (mute/unmute)
                         if (isFacingForward !== wasFacing && callFrame) {
+                            console.log(`🔄 Changing microphone state: ${wasFacing} → ${isFacingForward}`);
                             await callFrame.setLocalAudio(isFacingForward);
                             console.log(`🎤 Microphone ${isFacingForward ? 'UNMUTED ✅' : 'MUTED ⏸️'}`);
+                            
+                            // 상태 확인
+                            const currentState = await callFrame.localAudio();
+                            console.log(`✓ Current microphone state confirmed: ${currentState}`);
                         }
                         
                     } catch (error) {
