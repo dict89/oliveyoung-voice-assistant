@@ -50,6 +50,6 @@ uv.lock
 .coverage
 htmlcov/
 
-# PDF files (기획서는 유지)
-# *.pdf
+# PDF files (기획서 등 문서 파일)
+*.pdf
 
