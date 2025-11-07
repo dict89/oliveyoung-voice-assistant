@@ -290,9 +290,62 @@ async def root():
                 content: "💬 ";
                 margin-right: 8px;
             }
+            
+            /* Face Detection Status */
+            .face-status {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                display: none;
+                align-items: center;
+                background: white;
+                padding: 12px 20px;
+                border-radius: 30px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                z-index: 1000;
+                font-size: 14px;
+                font-weight: 500;
+            }
+            
+            .face-status.active {
+                display: flex;
+            }
+            
+            .face-status-icon {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                margin-right: 10px;
+                animation: pulse 2s infinite;
+            }
+            
+            .face-status-icon.green {
+                background: #28a745;
+                box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
+            }
+            
+            .face-status-icon.red {
+                background: #dc3545;
+                box-shadow: 0 0 10px rgba(220, 53, 69, 0.5);
+            }
+            
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.6; }
+            }
+            
+            .face-status-text {
+                color: #495057;
+            }
         </style>
     </head>
     <body>
+        <!-- Face Detection Status Indicator -->
+        <div id="faceStatus" class="face-status">
+            <div id="faceStatusIcon" class="face-status-icon red"></div>
+            <span id="faceStatusText" class="face-status-text">카메라 대기중...</span>
+        </div>
+        
         <div class="container">
             <h1>🛍️ 올리브영 음성 쇼핑 어시스턴트</h1>
             <p class="subtitle">AI 음성 봇과 대화하며 매장 정보를 확인하세요</p>
@@ -342,8 +395,13 @@ async def root():
         </div>
         
         <script src="https://unpkg.com/@daily-co/daily-js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
         <script>
             let callFrame = null;
+            let faceDetectionActive = false;
+            let isFacingForward = false;
+            let faceDetectionInterval = null;
             
             function showStatus(message, type) {
                 const status = document.getElementById('status');
@@ -378,10 +436,157 @@ async def root():
                 chatHistory.innerHTML = '';
             }
             
+            // Face Detection Functions
+            let blazefaceModel = null;
+            
+            async function loadFaceDetectionModel() {
+                try {
+                    console.log('Loading BlazeFace model...');
+                    blazefaceModel = await blazeface.load();
+                    console.log('BlazeFace model loaded');
+                } catch (error) {
+                    console.error('Failed to load BlazeFace model:', error);
+                }
+            }
+            
+            function updateFaceStatus(isFacing) {
+                const statusDiv = document.getElementById('faceStatus');
+                const statusIcon = document.getElementById('faceStatusIcon');
+                const statusText = document.getElementById('faceStatusText');
+                
+                statusDiv.classList.add('active');
+                
+                if (isFacing) {
+                    statusIcon.className = 'face-status-icon green';
+                    statusText.textContent = '🎤 마이크 활성 (정면 인식)';
+                } else {
+                    statusIcon.className = 'face-status-icon red';
+                    statusText.textContent = '⏸️ 마이크 대기 (정면을 봐주세요)';
+                }
+            }
+            
+            async function detectFace(videoElement) {
+                if (!blazefaceModel || !videoElement) return false;
+                
+                try {
+                    const predictions = await blazefaceModel.estimateFaces(videoElement, false);
+                    
+                    if (predictions.length > 0) {
+                        const face = predictions[0];
+                        
+                        // 얼굴 크기로 거리 판단 (정면: 얼굴이 충분히 크게 보임)
+                        const landmarks = face.landmarks;
+                        const leftEye = landmarks[0];
+                        const rightEye = landmarks[1];
+                        const eyeDistance = Math.sqrt(
+                            Math.pow(rightEye[0] - leftEye[0], 2) + 
+                            Math.pow(rightEye[1] - leftEye[1], 2)
+                        );
+                        
+                        // 얼굴 박스 크기
+                        const faceWidth = face.bottomRight[0] - face.topLeft[0];
+                        const faceHeight = face.bottomRight[1] - face.topLeft[1];
+                        
+                        // 정면 판단: 얼굴 크기가 충분히 크고, 눈 사이 거리가 적당함
+                        const isFrontal = faceWidth > 80 && faceHeight > 80 && eyeDistance > 30;
+                        
+                        console.log(`Face detected: width=${faceWidth.toFixed(0)}, height=${faceHeight.toFixed(0)}, eyeDist=${eyeDistance.toFixed(0)}, frontal=${isFrontal}`);
+                        
+                        return isFrontal;
+                    }
+                    
+                    return false;
+                } catch (error) {
+                    console.error('Face detection error:', error);
+                    return false;
+                }
+            }
+            
+            function startFaceDetection() {
+                if (faceDetectionInterval) return;
+                
+                console.log('Starting face detection (1 fps)...');
+                
+                // 1초에 1번 체크
+                faceDetectionInterval = setInterval(async () => {
+                    if (!callFrame) return;
+                    
+                    try {
+                        const participants = callFrame.participants();
+                        const localParticipant = participants.local;
+                        
+                        if (!localParticipant || !localParticipant.video) {
+                            isFacingForward = false;
+                            updateFaceStatus(false);
+                            if (callFrame) callFrame.setLocalAudio(false);
+                            return;
+                        }
+                        
+                        // Video track에서 프레임 추출
+                        const videoTrack = callFrame.localVideo();
+                        if (!videoTrack) {
+                            isFacingForward = false;
+                            updateFaceStatus(false);
+                            if (callFrame) callFrame.setLocalAudio(false);
+                            return;
+                        }
+                        
+                        // 임시 video element 생성
+                        const video = document.createElement('video');
+                        video.srcObject = new MediaStream([videoTrack]);
+                        video.autoplay = true;
+                        video.muted = true;
+                        
+                        // video가 재생될 때까지 대기
+                        await new Promise((resolve) => {
+                            video.onloadeddata = resolve;
+                        });
+                        
+                        // 얼굴 감지
+                        const wasFacing = isFacingForward;
+                        isFacingForward = await detectFace(video);
+                        
+                        // 상태 업데이트
+                        updateFaceStatus(isFacingForward);
+                        
+                        // 마이크 제어
+                        if (isFacingForward !== wasFacing && callFrame) {
+                            callFrame.setLocalAudio(isFacingForward);
+                            console.log(`Microphone ${isFacingForward ? 'ENABLED' : 'DISABLED'}`);
+                        }
+                        
+                        // cleanup
+                        video.srcObject = null;
+                        
+                    } catch (error) {
+                        console.error('Face detection loop error:', error);
+                    }
+                }, 1000); // 1초마다
+                
+                faceDetectionActive = true;
+            }
+            
+            function stopFaceDetection() {
+                if (faceDetectionInterval) {
+                    clearInterval(faceDetectionInterval);
+                    faceDetectionInterval = null;
+                }
+                faceDetectionActive = false;
+                
+                const statusDiv = document.getElementById('faceStatus');
+                statusDiv.classList.remove('active');
+            }
+            
             async function startConversation() {
                 const btn = document.getElementById('startBtn');
                 btn.disabled = true;
                 showStatus('룸을 생성하는 중...', 'info');
+                
+                // 얼굴 인식 모델 로드
+                if (!blazefaceModel) {
+                    showStatus('얼굴 인식 모델 로딩 중...', 'info');
+                    await loadFaceDetectionModel();
+                }
                 
                 try {
                     // 룸 생성 요청
@@ -431,6 +636,10 @@ async def root():
                     const joinResult = await Promise.race([joinPromise, timeoutPromise]);
                     console.log('Join result:', joinResult);
                     
+                    // 초기 마이크 꺼진 상태 (얼굴 인식으로 제어)
+                    callFrame.setLocalAudio(false);
+                    console.log('Initial microphone state: DISABLED (face detection pending)');
+                    
                     showStatus('봇이 참여하는 중... 잠시만 기다려주세요.', 'info');
                     
                     // 선택된 언어 가져오기
@@ -451,14 +660,17 @@ async def root():
                         })
                     });
                     
-                    // 잠시 대기 후 성공 메시지
+                    // 잠시 대기 후 성공 메시지 및 얼굴 인식 시작
                     setTimeout(() => {
-                        showStatus('✅ 연결되었습니다! 마이크를 켜고 대화를 시작하세요.', 'success');
+                        showStatus('✅ 연결되었습니다! 정면을 바라보면 마이크가 활성화됩니다.', 'success');
+                        
+                        // 얼굴 인식 시작 (1초에 1번 체크)
+                        startFaceDetection();
                     }, 2000);
                     
                     // 채팅창 초기화
                     clearChat();
-                    addChatMessage('assistant', '안녕하세요! 올리브영 쇼핑 어시스턴트입니다. 매장 정보나 제품 추천이 필요하시면 말씀해 주세요.');
+                    addChatMessage('assistant', '안녕하세요! 올리브영 쇼핑 어시스턴트입니다. 정면을 바라보시면 질문하실 수 있습니다.');
                     
                     // WebSocket 연결 (OpenAI Whisper 결과 수신용)
                     const chatProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -505,10 +717,16 @@ async def root():
                         document.getElementById('videoContainer').style.display = 'none';
                         btn.disabled = false;
                         showStatus('대화가 종료되었습니다.', 'info');
+                        
+                        // 얼굴 인식 중지
+                        stopFaceDetection();
                     });
                     
                 } catch (error) {
                     console.error('Error:', error);
+                    
+                    // 얼굴 인식 중지
+                    stopFaceDetection();
                     
                     // 에러 타입별 처리
                     let errorMessage = '오류가 발생했습니다: ' + error.message;
