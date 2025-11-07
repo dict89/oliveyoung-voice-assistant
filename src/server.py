@@ -402,6 +402,8 @@ async def root():
             let faceDetectionActive = false;
             let isFacingForward = false;
             let faceDetectionInterval = null;
+            let inactivityTimer = null;
+            const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5분 (밀리초)
             
             function showStatus(message, type) {
                 const status = document.getElementById('status');
@@ -434,6 +436,38 @@ async def root():
             function clearChat() {
                 const chatHistory = document.getElementById('chatHistory');
                 chatHistory.innerHTML = '';
+            }
+            
+            // Inactivity Timeout Functions
+            function resetInactivityTimer() {
+                // 기존 타이머 취소
+                if (inactivityTimer) {
+                    clearTimeout(inactivityTimer);
+                }
+                
+                // 새로운 타이머 시작 (5분)
+                inactivityTimer = setTimeout(() => {
+                    console.warn('⏰ Inactivity timeout (5 minutes). Ending session...');
+                    showStatus('⏰ 5분간 대화가 없어 세션이 종료됩니다.', 'warning');
+                    
+                    // 세션 종료
+                    setTimeout(() => {
+                        if (callFrame) {
+                            callFrame.leave();
+                        }
+                        stopFaceDetection();
+                    }, 2000);
+                }, INACTIVITY_TIMEOUT);
+                
+                console.log('⏱️ Inactivity timer reset (5 min)');
+            }
+            
+            function stopInactivityTimer() {
+                if (inactivityTimer) {
+                    clearTimeout(inactivityTimer);
+                    inactivityTimer = null;
+                    console.log('⏱️ Inactivity timer stopped');
+                }
             }
             
             // Face Detection Functions
@@ -728,7 +762,7 @@ async def root():
                     
                     const joinPromise = callFrame.join({ url: data.room_url });
                     const timeoutPromise = new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('Daily.co 연결 타임아웃 (10초)')), 10000)
+                        setTimeout(() => reject(new Error('Daily.co 연결 타임아웃 (30초)')), 30000)
                     );
                     
                     const joinResult = await Promise.race([joinPromise, timeoutPromise]);
@@ -764,6 +798,9 @@ async def root():
                         
                         // 얼굴 인식 시작 (1초에 1번 체크)
                         await startFaceDetection();
+                        
+                        // 비활성 타이머 시작 (5분)
+                        resetInactivityTimer();
                     }, 2000);
                     
                     // 채팅창 초기화
@@ -793,6 +830,9 @@ async def root():
                             if (data.type === 'transcript' && data.speaker === 'user' && data.text) {
                                 console.log('✅ Adding user message:', data.text);
                                 addChatMessage('user', data.text);
+                                
+                                // Intent:YES로 통과한 메시지 → 비활성 타이머 리셋
+                                resetInactivityTimer();
                             } else if (data.type === 'response' && data.speaker === 'assistant' && data.text) {
                                 console.log('✅ Adding assistant message:', data.text);
                                 addChatMessage('assistant', data.text);
@@ -818,6 +858,9 @@ async def root():
                         
                         // 얼굴 인식 중지
                         stopFaceDetection();
+                        
+                        // 비활성 타이머 중지
+                        stopInactivityTimer();
                     });
                     
                 } catch (error) {
@@ -825,6 +868,9 @@ async def root():
                     
                     // 얼굴 인식 중지
                     stopFaceDetection();
+                    
+                    // 비활성 타이머 중지
+                    stopInactivityTimer();
                     
                     // 에러 타입별 처리
                     let errorMessage = '오류가 발생했습니다: ' + error.message;
