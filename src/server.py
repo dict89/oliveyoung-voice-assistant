@@ -438,6 +438,8 @@ async def root():
             
             // Face Detection Functions
             let blazefaceModel = null;
+            let localVideoStream = null;
+            let localVideoElement = null;
             
             async function loadFaceDetectionModel() {
                 try {
@@ -446,6 +448,39 @@ async def root():
                     console.log('BlazeFace model loaded');
                 } catch (error) {
                     console.error('Failed to load BlazeFace model:', error);
+                }
+            }
+            
+            async function initializeLocalVideo() {
+                try {
+                    // 로컬 비디오 스트림 가져오기 (한 번만)
+                    localVideoStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: false 
+                    });
+                    
+                    // 숨겨진 video element 생성
+                    localVideoElement = document.createElement('video');
+                    localVideoElement.srcObject = localVideoStream;
+                    localVideoElement.autoplay = true;
+                    localVideoElement.muted = true;
+                    localVideoElement.width = 640;
+                    localVideoElement.height = 480;
+                    localVideoElement.style.display = 'none';
+                    document.body.appendChild(localVideoElement);
+                    
+                    // video가 재생될 때까지 대기
+                    await new Promise((resolve) => {
+                        localVideoElement.onloadeddata = () => {
+                            console.log('Local video stream ready');
+                            resolve();
+                        };
+                    });
+                    
+                    return true;
+                } catch (error) {
+                    console.error('Failed to initialize local video:', error);
+                    return false;
                 }
             }
             
@@ -502,14 +537,22 @@ async def root():
                 }
             }
             
-            function startFaceDetection() {
+            async function startFaceDetection() {
                 if (faceDetectionInterval) return;
                 
                 console.log('Starting face detection (1 fps)...');
                 
+                // 로컬 비디오 초기화 (한 번만)
+                const videoReady = await initializeLocalVideo();
+                if (!videoReady || !localVideoElement) {
+                    console.error('Failed to initialize video for face detection');
+                    updateFaceStatus(false);
+                    return;
+                }
+                
                 // 1초에 1번 체크
                 faceDetectionInterval = setInterval(async () => {
-                    if (!callFrame) return;
+                    if (!callFrame || !localVideoElement) return;
                     
                     try {
                         const participants = callFrame.participants();
@@ -518,45 +561,23 @@ async def root():
                         if (!localParticipant || !localParticipant.video) {
                             isFacingForward = false;
                             updateFaceStatus(false);
-                            if (callFrame) callFrame.setLocalAudio(false);
+                            // Daily.co 마이크 mute
+                            await callFrame.setLocalAudio(false);
                             return;
                         }
                         
-                        // Video track에서 프레임 추출
-                        const videoTrack = callFrame.localVideo();
-                        if (!videoTrack) {
-                            isFacingForward = false;
-                            updateFaceStatus(false);
-                            if (callFrame) callFrame.setLocalAudio(false);
-                            return;
-                        }
-                        
-                        // 임시 video element 생성
-                        const video = document.createElement('video');
-                        video.srcObject = new MediaStream([videoTrack]);
-                        video.autoplay = true;
-                        video.muted = true;
-                        
-                        // video가 재생될 때까지 대기
-                        await new Promise((resolve) => {
-                            video.onloadeddata = resolve;
-                        });
-                        
-                        // 얼굴 감지
+                        // 얼굴 감지 (재사용 video element)
                         const wasFacing = isFacingForward;
-                        isFacingForward = await detectFace(video);
+                        isFacingForward = await detectFace(localVideoElement);
                         
                         // 상태 업데이트
                         updateFaceStatus(isFacingForward);
                         
-                        // 마이크 제어
+                        // Daily.co 마이크 제어 (mute/unmute)
                         if (isFacingForward !== wasFacing && callFrame) {
-                            callFrame.setLocalAudio(isFacingForward);
-                            console.log(`Microphone ${isFacingForward ? 'ENABLED' : 'DISABLED'}`);
+                            await callFrame.setLocalAudio(isFacingForward);
+                            console.log(`🎤 Microphone ${isFacingForward ? 'UNMUTED ✅' : 'MUTED ⏸️'}`);
                         }
-                        
-                        // cleanup
-                        video.srcObject = null;
                         
                     } catch (error) {
                         console.error('Face detection loop error:', error);
@@ -573,8 +594,23 @@ async def root():
                 }
                 faceDetectionActive = false;
                 
+                // 비디오 스트림 정리
+                if (localVideoStream) {
+                    localVideoStream.getTracks().forEach(track => track.stop());
+                    localVideoStream = null;
+                }
+                if (localVideoElement) {
+                    localVideoElement.srcObject = null;
+                    if (localVideoElement.parentNode) {
+                        localVideoElement.parentNode.removeChild(localVideoElement);
+                    }
+                    localVideoElement = null;
+                }
+                
                 const statusDiv = document.getElementById('faceStatus');
                 statusDiv.classList.remove('active');
+                
+                console.log('Face detection stopped and resources cleaned up');
             }
             
             async function startConversation() {
@@ -661,11 +697,11 @@ async def root():
                     });
                     
                     // 잠시 대기 후 성공 메시지 및 얼굴 인식 시작
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         showStatus('✅ 연결되었습니다! 정면을 바라보면 마이크가 활성화됩니다.', 'success');
                         
                         // 얼굴 인식 시작 (1초에 1번 체크)
-                        startFaceDetection();
+                        await startFaceDetection();
                     }, 2000);
                     
                     // 채팅창 초기화
