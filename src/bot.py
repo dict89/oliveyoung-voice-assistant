@@ -187,73 +187,93 @@ class ResponseLogger(FrameProcessor):
         # StoreService 인스턴스 (제품/매장 정보 조회용)
         from .store_service import StoreService
         self.store_service = StoreService()
+        self.response_buffer = ""  # 응답 버퍼링
+        self.products_sent = False  # 제품 이미지 전송 여부
+        self.store_sent = False     # 매장 이미지 전송 여부
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         
-        # LLM 응답 텍스트 (TextFrame)
+        # LLM 응답 텍스트 (TextFrame) - 스트리밍으로 들어옴
         if isinstance(frame, TextFrame):
             text = frame.text
             if text and text.strip():
-                logger.info(f"🤖 [ASSISTANT]: {text}")
+                # 스트리밍 로그
+                logger.info(f"🤖 [ASSISTANT CHUNK]: {text}")
                 
-                # [PRODUCTS:...] 패턴 파싱
+                # 응답 버퍼에 누적
+                self.response_buffer += text
+                
+                # 태그 완성 여부 확인 (] 로 끝나는 태그)
                 import re
-                products_match = re.search(r'\[PRODUCTS:(.*?)\]', text)
-                if products_match:
-                    product_ids = [pid.strip() for pid in products_match.group(1).split(',')]
-                    logger.info(f"🛍️ Found product IDs: {product_ids}")
-                    
-                    # 제품 정보 조회
-                    all_products = self.store_service.get_all_products()
-                    selected_products = [
-                        p for p in all_products 
-                        if p.get('product_id') in product_ids
-                    ]
-                    
-                    if selected_products:
-                        # 이미지 표시 메시지 전송
-                        await broadcast_message({
-                            "type": "show_images",
-                            "content_type": "products",
-                            "data": {"products": selected_products}
-                        })
-                        logger.info(f"✅ Sent product images: {len(selected_products)} items")
-                    
-                    # 텍스트에서 태그 제거 (TTS용)
-                    text = re.sub(r'\[PRODUCTS:.*?\]', '', text).strip()
                 
-                # [STORE:...] 패턴 파싱
-                store_match = re.search(r'\[STORE:(.*?)\]', text)
-                if store_match:
-                    store_id = store_match.group(1).strip()
-                    logger.info(f"🏪 Found store ID: {store_id}")
-                    
-                    # 매장 정보 조회
-                    main_store = self.store_service.data.get("store", {})
-                    if main_store.get("store_id") == store_id:
-                        store_images = main_store.get("store_images", [])
-                        if store_images:
+                # [PRODUCTS:...] 완성 체크 (한 번만 전송)
+                if not self.products_sent:
+                    products_match = re.search(r'\[PRODUCTS:([^\]]+)\]', self.response_buffer)
+                    if products_match:
+                        product_ids = [pid.strip() for pid in products_match.group(1).split(',')]
+                        logger.info(f"🛍️ Found complete product tag with IDs: {product_ids}")
+                        
+                        # 제품 정보 조회
+                        all_products = self.store_service.get_all_products()
+                        selected_products = [
+                            p for p in all_products 
+                            if p.get('product_id') in product_ids
+                        ]
+                        
+                        if selected_products:
+                            # 이미지 표시 메시지 전송
                             await broadcast_message({
                                 "type": "show_images",
-                                "content_type": "store",
-                                "data": {
-                                    "store_name": main_store.get("store_name", ""),
-                                    "image_url": store_images[0],
-                                    "address": main_store.get("address", "")
-                                }
+                                "content_type": "products",
+                                "data": {"products": selected_products}
                             })
-                            logger.info(f"✅ Sent store image")
-                    
-                    # 텍스트에서 태그 제거 (TTS용)
-                    text = re.sub(r'\[STORE:.*?\]', '', text).strip()
+                            logger.info(f"✅ Sent product images: {len(selected_products)} items")
+                            self.products_sent = True  # 전송 완료 플래그
                 
-                # 브라우저로 전송 (태그 제거된 텍스트)
-                await broadcast_message({
-                    "type": "response",
-                    "speaker": "assistant",
-                    "text": text
-                })
+                # [STORE:...] 완성 체크 (한 번만 전송)
+                if not self.store_sent:
+                    store_match = re.search(r'\[STORE:([^\]]+)\]', self.response_buffer)
+                    if store_match:
+                        store_id = store_match.group(1).strip()
+                        logger.info(f"🏪 Found complete store tag with ID: {store_id}")
+                        
+                        # 매장 정보 조회
+                        main_store = self.store_service.data.get("store", {})
+                        if main_store.get("store_id") == store_id:
+                            store_images = main_store.get("store_images", [])
+                            if store_images:
+                                await broadcast_message({
+                                    "type": "show_images",
+                                    "content_type": "store",
+                                    "data": {
+                                        "store_name": main_store.get("store_name", ""),
+                                        "image_url": store_images[0],
+                                        "address": main_store.get("address", "")
+                                    }
+                                })
+                                logger.info(f"✅ Sent store image")
+                                self.store_sent = True  # 전송 완료 플래그
+                
+                # 태그 제거 후 전송 (TTS용)
+                clean_text = re.sub(r'\[PRODUCTS:[^\]]*\]', '', text)
+                clean_text = re.sub(r'\[STORE:[^\]]*\]', '', clean_text).strip()
+                
+                if clean_text:  # 빈 문자열이 아닐 때만 전송
+                    # 브라우저로 전송
+                    await broadcast_message({
+                        "type": "response",
+                        "speaker": "assistant",
+                        "text": clean_text
+                    })
+        
+        # 응답 종료 시 버퍼 및 플래그 리셋
+        elif isinstance(frame, EndFrame):
+            if self.response_buffer:
+                logger.info(f"📝 Complete response: {self.response_buffer}")
+                self.response_buffer = ""
+                self.products_sent = False
+                self.store_sent = False
         
         await self.push_frame(frame, direction)
 
