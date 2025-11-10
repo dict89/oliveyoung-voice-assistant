@@ -191,6 +191,7 @@ class ResponseLogger(FrameProcessor):
         self.products_sent = False  # 제품 이미지 전송 여부
         self.store_sent = False     # 매장 이미지 전송 여부
         self.response_sent = False  # 응답 채팅창 전송 여부
+        self.completion_timer = None  # 완료 감지 타이머
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -199,7 +200,7 @@ class ResponseLogger(FrameProcessor):
         if isinstance(frame, TextFrame):
             text = frame.text
             if text and text.strip():
-                # 응답 버퍼에 누적 (로그는 나중에 한 번만)
+                # 응답 버퍼에 누적
                 self.response_buffer += text
                 
                 # 태그 완성 여부 확인
@@ -253,19 +254,28 @@ class ResponseLogger(FrameProcessor):
                                 logger.info(f"✅ Sent store image")
                                 self.store_sent = True
                 
-                # 문장 종료 감지 (., !, ?, 한국어 종결어미 등)
-                # 응답이 끝났다고 판단되면 전송
-                if text.rstrip().endswith(('.', '!', '?', '다', '요', '니다', '습니다', ']')):
-                    # 완성된 것 같으면 전송
-                    if len(self.response_buffer) > 5:  # 최소 길이 체크
-                        await self._send_complete_response()
+                # 타이머 기반 완료 감지: 0.5초 동안 새 TextFrame 안 오면 완료로 간주
+                if self.completion_timer:
+                    self.completion_timer.cancel()
+                
+                import asyncio
+                self.completion_timer = asyncio.create_task(self._wait_and_send())
         
         await self.push_frame(frame, direction)
+    
+    async def _wait_and_send(self):
+        """0.5초 대기 후 응답 전송"""
+        import asyncio
+        try:
+            await asyncio.sleep(0.5)  # 0.5초 대기
+            await self._send_complete_response()
+        except asyncio.CancelledError:
+            pass  # 새 TextFrame이 와서 취소됨
     
     async def _send_complete_response(self):
         """완성된 응답을 전송"""
         if not self.response_buffer or self.response_sent:
-            return  # 이미 전송했거나 버퍼 비어있음
+            return
         
         logger.info(f"🤖 [ASSISTANT]: {self.response_buffer}")
         
@@ -282,10 +292,7 @@ class ResponseLogger(FrameProcessor):
             })
             logger.info(f"✅ Sent complete response to chat")
         
-        # 전송 완료 플래그
-        self.response_sent = True
-        
-        # 다음 응답을 위해 버퍼만 리셋 (플래그는 새 응답 시작 시 리셋)
+        # 버퍼 및 플래그 리셋
         self.response_buffer = ""
         self.products_sent = False
         self.store_sent = False
