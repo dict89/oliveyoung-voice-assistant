@@ -10,6 +10,7 @@ import aiohttp
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import json
 from loguru import logger
@@ -31,6 +32,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 정적 파일 서빙 (지도 이미지 등)
+app.mount("/data", StaticFiles(directory="data"), name="data")
 
 # Daily API 설정
 DAILY_API_KEY = os.getenv("DAILY_API_KEY")
@@ -399,12 +403,18 @@ async def root():
                 border: 1px solid #e0e0e0;
                 border-radius: 10px;
                 overflow: hidden;
-                transition: transform 0.3s, box-shadow 0.3s;
+                transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
+                cursor: pointer;
             }
             
             .product-card:hover {
                 transform: translateY(-5px);
-                box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+                box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+                border-color: #667eea;
+            }
+            
+            .product-card:active {
+                transform: translateY(-3px);
             }
             
             .product-image {
@@ -589,12 +599,15 @@ async def root():
                 const modal = document.getElementById('imageModal');
                 const modalBody = document.getElementById('imageModalBody');
                 
-                let html = '<h2 style="margin-bottom: 20px; color: #667eea;">🛍️ 추천 제품</h2>';
+                let html = '<h2 style="margin-bottom: 20px; color: #667eea;">🛍️ 추천 제품 <span style="font-size: 14px; color: #999;">(클릭하면 매장 내 위치 확인)</span></h2>';
                 html += '<div class="product-grid">';
                 
-                products.forEach(product => {
+                products.forEach((product, index) => {
+                    const category = product.category || '기타';
+                    const mapImage = getCategoryMapImage(category);
+                    
                     html += `
-                        <div class="product-card">
+                        <div class="product-card" onclick="showLocationMap('${mapImage}', '${product.name}', '${category}')" style="cursor: pointer;">
                             <img src="${product.image_url}" alt="${product.name}" class="product-image" 
                                  onerror="this.src='https://via.placeholder.com/250x250?text=No+Image'">
                             <div class="product-info">
@@ -602,6 +615,9 @@ async def root():
                                 <div class="product-price">
                                     ${product.discount_rate ? `<span class="discount-badge">${product.discount_rate}%</span>` : ''}
                                     ${product.sale_price ? `<span class="sale-price">${product.sale_price.toLocaleString()}원</span>` : ''}
+                                </div>
+                                <div style="margin-top: 10px; font-size: 12px; color: #667eea;">
+                                    📍 ${category} 섹션
                                 </div>
                             </div>
                         </div>
@@ -613,6 +629,39 @@ async def root():
                 modal.classList.add('active');
                 
                 console.log('✅ Product images displayed:', products.length);
+            }
+            
+            function getCategoryMapImage(category) {
+                // 카테고리별 지도 이미지 매핑
+                const mapImages = {
+                    '스킨케어': '/data/skincare.png',
+                    '클렌징': '/data/cleansing.png',
+                    '기타': '/data/skincare.png'  // 기본값
+                };
+                return mapImages[category] || '/data/skincare.png';
+            }
+            
+            function showLocationMap(mapImageUrl, productName, category) {
+                const modal = document.getElementById('imageModal');
+                const modalBody = document.getElementById('imageModalBody');
+                
+                let html = `
+                    <div style="text-align: center;">
+                        <h2 style="margin-bottom: 20px; color: #667eea;">📍 매장 내 위치</h2>
+                        <p style="font-size: 16px; margin-bottom: 10px; color: #333;">${productName}</p>
+                        <p style="font-size: 14px; margin-bottom: 20px; color: #666;">${category} 섹션</p>
+                        <img src="${mapImageUrl}" alt="매장 지도" style="max-width: 100%; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"
+                             onerror="this.src='https://via.placeholder.com/600x400?text=지도+이미지+없음'">
+                        <p style="margin-top: 20px; color: #999; font-size: 12px;">
+                            💡 팁: 뒤로가기를 눌러 제품 목록으로 돌아가세요
+                        </p>
+                    </div>
+                `;
+                
+                modalBody.innerHTML = html;
+                modal.classList.add('active');
+                
+                console.log('🗺️ Location map displayed:', productName, category);
             }
             
             function showStoreImage(storeData) {
@@ -656,25 +705,28 @@ async def root():
                 try {
                     console.log('🧪 Testing image popup...');
                     
-                    // 샘플 제품 데이터 (직접 표시)
+                    // 샘플 제품 데이터 (카테고리 포함)
                     const sampleProducts = [
                         {
                             name: "[11월 올영픽] 에스트라 아토베리어365 크림 80ml 더블 기획",
                             image_url: "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023633808ko.jpg?l=ko&rs=800x0",
                             sale_price: 44500,
-                            discount_rate: 25
+                            discount_rate: 25,
+                            category: "스킨케어"
                         },
                         {
                             name: "[속보습세럼] 토리든 다이브인 저분자 히알루론산 세럼 50ml",
                             image_url: "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0018/A00000018926132ko.jpg?l=ko&rs=800x0",
                             sale_price: 25650,
-                            discount_rate: 28
+                            discount_rate: 28,
+                            category: "스킨케어"
                         },
                         {
-                            name: "[NO.1 미스트세럼] 달바 퍼스트 스프레이 세럼 100ml",
-                            image_url: "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023272408ko.jpg?l=ko&rs=800x0",
-                            sale_price: 32500,
-                            discount_rate: 45
+                            name: "[11월 올영픽] 라로슈포제 시카플라스트 밤 B5+ 100ml",
+                            image_url: "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023609906ko.jpg?l=ko&rs=800x0",
+                            sale_price: 30000,
+                            discount_rate: 25,
+                            category: "클렌징"
                         }
                     ];
                     

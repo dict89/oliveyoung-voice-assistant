@@ -221,6 +221,14 @@ class ResponseLogger(FrameProcessor):
                         ]
                         
                         if selected_products:
+                            # 제품에 카테고리 정보 추가 (지도 매핑용)
+                            categories_map = self.store_service.get_categories()
+                            for product in selected_products:
+                                for cat_name, cat_products in categories_map.items():
+                                    if any(p.get('product_id') == product.get('product_id') for p in cat_products):
+                                        product['category'] = cat_name
+                                        break
+                            
                             # 실제 제품 찾음 → 이미지 전송
                             await broadcast_message({
                                 "type": "show_images",
