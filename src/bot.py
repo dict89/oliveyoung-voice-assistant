@@ -181,6 +181,20 @@ class TranscriptLogger(FrameProcessor):
                     "speaker": "user",
                     "text": text.strip()  # 공백 제거
                 })
+                
+                # 제품 추천 요청 감지 시 자동으로 인기 제품 표시
+                text_lower = text.lower()
+                product_keywords = ["추천", "제품", "인기", "product", "recommend", "popular"]
+                if any(keyword in text_lower for keyword in product_keywords):
+                    logger.info(f"🎯 Product recommendation detected, showing popular products")
+                    popular_products = self.store_service.get_popular_products(limit=3)
+                    if popular_products:
+                        await broadcast_message({
+                            "type": "show_images",
+                            "content_type": "products",
+                            "data": {"products": popular_products}
+                        })
+                        logger.info(f"✅ Auto-displayed {len(popular_products)} popular products")
         
         # LLM 응답 텍스트
         elif isinstance(frame, TextFrame):
