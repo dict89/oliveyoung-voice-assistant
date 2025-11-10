@@ -161,6 +161,12 @@ Your answer (YES or NO):"""
 class TranscriptLogger(FrameProcessor):
     """대화 내용을 WebSocket으로 전송하는 프로세서 (Intent:YES만 도달)"""
     
+    def __init__(self):
+        super().__init__()
+        # StoreService 인스턴스 (제품/매장 정보 조회용)
+        from .store_service import StoreService
+        self.store_service = StoreService()
+    
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         
@@ -181,7 +187,59 @@ class TranscriptLogger(FrameProcessor):
             text = frame.text
             if text and text.strip():
                 logger.info(f"🤖 [ASSISTANT]: {text}")
-                # 브라우저로 전송 (전역 WebSocket 매니저 사용)
+                
+                # [PRODUCTS:...] 패턴 파싱
+                import re
+                products_match = re.search(r'\[PRODUCTS:(.*?)\]', text)
+                if products_match:
+                    product_ids = [pid.strip() for pid in products_match.group(1).split(',')]
+                    logger.info(f"🛍️ Found product IDs: {product_ids}")
+                    
+                    # 제품 정보 조회
+                    all_products = self.store_service.get_all_products()
+                    selected_products = [
+                        p for p in all_products 
+                        if p.get('product_id') in product_ids
+                    ]
+                    
+                    if selected_products:
+                        # 이미지 표시 메시지 전송
+                        await broadcast_message({
+                            "type": "show_images",
+                            "content_type": "products",
+                            "data": {"products": selected_products}
+                        })
+                        logger.info(f"✅ Sent product images: {len(selected_products)} items")
+                    
+                    # 텍스트에서 태그 제거 (TTS용)
+                    text = re.sub(r'\[PRODUCTS:.*?\]', '', text).strip()
+                
+                # [STORE:...] 패턴 파싱
+                store_match = re.search(r'\[STORE:(.*?)\]', text)
+                if store_match:
+                    store_id = store_match.group(1).strip()
+                    logger.info(f"🏪 Found store ID: {store_id}")
+                    
+                    # 매장 정보 조회
+                    main_store = self.store_service.data.get("store", {})
+                    if main_store.get("store_id") == store_id:
+                        store_images = main_store.get("store_images", [])
+                        if store_images:
+                            await broadcast_message({
+                                "type": "show_images",
+                                "content_type": "store",
+                                "data": {
+                                    "store_name": main_store.get("store_name", ""),
+                                    "image_url": store_images[0],
+                                    "address": main_store.get("address", "")
+                                }
+                            })
+                            logger.info(f"✅ Sent store image")
+                    
+                    # 텍스트에서 태그 제거 (TTS용)
+                    text = re.sub(r'\[STORE:.*?\]', '', text).strip()
+                
+                # 브라우저로 전송 (태그 제거된 텍스트)
                 await broadcast_message({
                     "type": "response",
                     "speaker": "assistant",
@@ -219,10 +277,10 @@ class OliveYoungVoiceBot:
         store_phone = main_store.get("phone", "")
         subway_info = main_store.get("subway_info", "")
         
-        # 인기 제품 (할인율 높은 순 3개)
-        popular_products = self.store_service.get_popular_products(limit=3)
+        # 인기 제품 (할인율 높은 순 5개, ID 포함)
+        popular_products = self.store_service.get_popular_products(limit=5)
         products_summary = "\n".join([
-            f"- {p['name']} (할인율 {p['discount_rate']}%, 판매가 {p['sale_price']:,}원)"
+            f"- [{p['product_id']}] {p['name'][:50]}... (할인 {p['discount_rate']}%, {p['sale_price']:,}원)"
             for p in popular_products
         ])
         
@@ -260,24 +318,29 @@ class OliveYoungVoiceBot:
 [인근 매장 (참고용)]
 {nearby_summary}
 
-[Function Calling 사용 규칙 - 매우 중요!]
-1. **제품 추천 시 반드시 show_product_images 함수를 호출**하여 이미지를 표시하세요
-   - 추천 제품의 name, image_url, sale_price, discount_rate 전달
-2. **매장 정보 안내 시 show_store_image 함수를 호출**하여 매장 이미지 표시
-   - 매장의 store_name, image_url, address 전달
-3. 함수 호출 후 간단히 "제품 이미지를 확인해주세요" 등으로 안내
+[이미지 표시 규칙 - 매우 중요!]
+제품 추천 시 응답 끝에 반드시 다음 형식을 추가하세요:
+[PRODUCTS:product_id1,product_id2,product_id3]
+
+예시:
+사용자: "제품 추천해줘"
+응답: "토리든 히알루론산 세럼과 달바 스프레이 세럼 추천드립니다. [PRODUCTS:A000000189261,A000000232724]"
+
+사용자: "매장 어디야?"
+응답: "올리브영 명동 타운은 명동역 8번 출구에 있습니다. [STORE:D176]"
 
 [응대 가이드라인]
 1. 고객의 질문을 정확히 이해하고 관련 정보를 제공하세요
 2. 매장 위치를 물으면 주소와 지하철 정보를 안내하세요
 3. 영업시간, 전화번호 등 구체적인 정보를 명확히 전달하세요
-4. 제품 추천 시에는 2-3개만 간단히 소개하고 **반드시 show_product_images 호출**
-5. 정보가 없는 경우 솔직히 말하고 다른 방법을 제안하세요
-6. **응답은 20-30초 이내로 매우 짧고 간결하게 작성하세요 (음성 대화)**
+4. 제품 추천 시에는 2-3개만 간단히 소개하고 **반드시 [PRODUCTS:...] 형식 추가**
+5. 매장 정보 안내 시 **반드시 [STORE:...] 형식 추가**
+6. 정보가 없는 경우 솔직히 말하고 다른 방법을 제안하세요
+7. **응답은 20-30초 이내로 매우 짧고 간결하게 작성하세요 (음성 대화)**
    - 핵심 정보만 2-3문장으로 전달
    - 긴 설명 금지
    - 불필요한 인사말 최소화
-7. 특수 문자는 사용하지 마세요 (음성으로 변환되므로)
+8. [PRODUCTS:...] [STORE:...] 태그는 TTS로 읽지 않으므로 자유롭게 사용하세요
 
 [중요]
 - 실제로 존재하지 않는 매장이나 제품 정보를 만들어내지 마세요
@@ -332,86 +395,11 @@ class OliveYoungVoiceBot:
             voice_id=voice_id,  # 명확하고 활기찬 여성 음성
         )
         
-        # Function calling tools 정의
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "show_product_images",
-                    "description": "제품 추천 시 제품 이미지를 팝업으로 표시합니다. 제품을 추천할 때 반드시 호출하세요.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "products": {
-                                "type": "array",
-                                "description": "표시할 제품 목록",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "name": {"type": "string", "description": "제품명"},
-                                        "image_url": {"type": "string", "description": "제품 이미지 URL"},
-                                        "sale_price": {"type": "number", "description": "판매가"},
-                                        "discount_rate": {"type": "number", "description": "할인율"}
-                                    },
-                                    "required": ["name", "image_url"]
-                                }
-                            }
-                        },
-                        "required": ["products"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "show_store_image",
-                    "description": "매장 정보 안내 시 매장 이미지를 팝업으로 표시합니다.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "store_name": {"type": "string", "description": "매장명"},
-                            "image_url": {"type": "string", "description": "매장 이미지 URL"},
-                            "address": {"type": "string", "description": "매장 주소"}
-                        },
-                        "required": ["store_name", "image_url"]
-                    }
-                }
-            }
-        ]
-        
-        # LLM 서비스 (대화 처리) - OpenAI with function calling
+        # LLM 서비스 (대화 처리) - OpenAI
         llm = OpenAILLMService(
             api_key=self.openai_api_key,
-            model="gpt-4o-mini",
-            tools=tools
+            model="gpt-4o-mini"
         )
-        
-        # Function calling 핸들러 등록
-        @llm.event_handler("on_function_call")
-        async def on_function_call(llm, function_name, arguments):
-            """Function call 이벤트 핸들러"""
-            logger.info(f"🔧 Function called: {function_name}")
-            logger.info(f"📋 Arguments: {arguments}")
-            
-            if function_name == "show_product_images":
-                # 제품 이미지 표시
-                await broadcast_message({
-                    "type": "show_images",
-                    "content_type": "products",
-                    "data": arguments
-                })
-                return {"status": "success", "message": "제품 이미지가 표시되었습니다"}
-                
-            elif function_name == "show_store_image":
-                # 매장 이미지 표시
-                await broadcast_message({
-                    "type": "show_images",
-                    "content_type": "store",
-                    "data": arguments
-                })
-                return {"status": "success", "message": "매장 이미지가 표시되었습니다"}
-            
-            return {"status": "error", "message": "Unknown function"}
         
         # 메시지 초기화
         messages = [
