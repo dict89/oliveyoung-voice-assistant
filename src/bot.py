@@ -255,22 +255,28 @@ class ResponseLogger(FrameProcessor):
                                 logger.info(f"✅ Sent store image")
                                 self.store_sent = True  # 전송 완료 플래그
                 
-                # 태그 제거 후 전송 (TTS용)
-                clean_text = re.sub(r'\[PRODUCTS:[^\]]*\]', '', text)
+                # 스트리밍 중에는 채팅창에 전송하지 않음 (TTS만 진행)
+                # 완성된 응답은 EndFrame에서 전송
+        
+        # 응답 종료 시 전체 응답 전송 및 버퍼 리셋
+        elif isinstance(frame, EndFrame):
+            if self.response_buffer:
+                logger.info(f"📝 Complete response: {self.response_buffer}")
+                
+                # 태그 제거 후 브라우저로 전송 (한 번만!)
+                import re
+                clean_text = re.sub(r'\[PRODUCTS:[^\]]*\]', '', self.response_buffer)
                 clean_text = re.sub(r'\[STORE:[^\]]*\]', '', clean_text).strip()
                 
-                if clean_text:  # 빈 문자열이 아닐 때만 전송
-                    # 브라우저로 전송
+                if clean_text:
                     await broadcast_message({
                         "type": "response",
                         "speaker": "assistant",
                         "text": clean_text
                     })
-        
-        # 응답 종료 시 버퍼 및 플래그 리셋
-        elif isinstance(frame, EndFrame):
-            if self.response_buffer:
-                logger.info(f"📝 Complete response: {self.response_buffer}")
+                    logger.info(f"✅ Sent complete response to chat")
+                
+                # 버퍼 및 플래그 리셋
                 self.response_buffer = ""
                 self.products_sent = False
                 self.store_sent = False
