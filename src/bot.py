@@ -211,7 +211,7 @@ class ResponseLogger(FrameProcessor):
                     products_match = re.search(r'\[PRODUCTS:([^\]]+)\]', self.response_buffer)
                     if products_match:
                         product_ids = [pid.strip() for pid in products_match.group(1).split(',')]
-                        logger.info(f"🛍️ Found complete product tag with IDs: {product_ids}")
+                        logger.info(f"🛍️ Found product tag with IDs: {product_ids}")
                         
                         # 제품 정보 조회
                         all_products = self.store_service.get_all_products()
@@ -221,7 +221,7 @@ class ResponseLogger(FrameProcessor):
                         ]
                         
                         if selected_products:
-                            # 이미지 표시 메시지 전송
+                            # 실제 제품 찾음 → 이미지 전송
                             await broadcast_message({
                                 "type": "show_images",
                                 "content_type": "products",
@@ -229,6 +229,11 @@ class ResponseLogger(FrameProcessor):
                             })
                             logger.info(f"✅ Sent product images: {len(selected_products)} items")
                             self.products_sent = True
+                        else:
+                            # 제품을 찾을 수 없음 → 할루시네이션 경고
+                            logger.warning(f"⚠️ HALLUCINATION: Product IDs not found in database: {product_ids}")
+                            logger.warning(f"⚠️ LLM generated fake product IDs. Image not displayed.")
+                            self.products_sent = True  # 재시도 방지
                 
                 # [STORE:...] 완성 체크 (한 번만 전송)
                 if not self.store_sent:
@@ -327,11 +332,11 @@ class OliveYoungVoiceBot:
         store_phone = main_store.get("phone", "")
         subway_info = main_store.get("subway_info", "")
         
-        # 인기 제품 (할인율 높은 순 5개, ID 포함)
-        popular_products = self.store_service.get_popular_products(limit=5)
+        # 모든 제품 목록 (ID 포함) - 할루시네이션 방지
+        all_products = self.store_service.get_all_products()
         products_summary = "\n".join([
-            f"- [{p['product_id']}] {p['name'][:50]}... (할인 {p['discount_rate']}%, {p['sale_price']:,}원)"
-            for p in popular_products
+            f"- [{p['product_id']}] {p['name'][:60]}... (할인 {p['discount_rate']}%, {p['sale_price']:,}원)"
+            for p in all_products
         ])
         
         # 카테고리 정보
@@ -360,8 +365,11 @@ class OliveYoungVoiceBot:
 전화: {store_phone}
 지하철: {subway_info}
 
-[현재 인기 제품 TOP 5]
+[사용 가능한 모든 제품 - 이 제품들만 사용 가능!]
 {products_summary}
+
+**⚠️ 경고: 위의 제품 ID만 사용하세요! 임의로 제품 ID를 만들지 마세요!**
+**존재하지 않는 제품 ID를 사용하면 이미지가 표시되지 않습니다!**
 
 [제품 카테고리]
 {categories_summary}
@@ -370,24 +378,24 @@ class OliveYoungVoiceBot:
 {nearby_summary}
 
 [이미지 표시 규칙 - 절대 필수!]
-**제품 추천 시 응답 마지막에 PRODUCTS 태그를 100% 추가해야 합니다!**
-**매장 정보 시 응답 마지막에 STORE 태그를 100% 추가해야 합니다!**
+제품 추천 시 응답 마지막에 반드시 PRODUCTS 태그를 추가하세요.
+매장 정보 시 응답 마지막에 반드시 STORE 태그를 추가하세요.
 
 형식:
 - 제품: [PRODUCTS:제품ID1,제품ID2,제품ID3]
-- 매장: [STORE:매장ID]
+- 매장: [STORE:D176]
 
-필수 예시:
+**반드시 위의 [사용 가능한 모든 제품] 목록에 있는 실제 제품 ID만 사용하세요!**
+
+예시:
 Q: "제품 추천해줘"
 A: "토리든 세럼과 달바 세럼 추천드립니다. [PRODUCTS:A000000189261,A000000232724]"
 
-Q: "인기 제품 뭐야?"
-A: "에스트라 크림, 토리든 세럼, 달바 세럼이 인기입니다. [PRODUCTS:A000000236338,A000000189261,A000000232724]"
+Q: "스킨케어 추천"
+A: "에스트라 크림, 라로슈포제 시카플라스트 추천합니다. [PRODUCTS:A000000236338,A000000236101]"
 
 Q: "매장 위치 알려줘"
 A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. [STORE:D176]"
-
-**태그 없이 답변하면 안 됩니다! 반드시 추가하세요!**
 
 [응대 가이드라인]
 1. 고객의 질문을 정확히 이해하고 관련 정보를 제공하세요
