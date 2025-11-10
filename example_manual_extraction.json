@@ -1,0 +1,23 @@
+{
+  "category": "스킨케어",
+  "extracted_at": "2025-11-10T15:30:00",
+  "products": [
+    {
+      "product_id": "A001234567",
+      "name": "토리든 다이브인 저분자 히알루론산 세럼",
+      "brand": "토리든",
+      "price": 25000,
+      "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0019/A00000019067001ko.jpg",
+      "stock_status": "재고있음"
+    },
+    {
+      "product_id": "A001234568",
+      "name": "라운드랩 1025 독도 토너",
+      "brand": "라운드랩",
+      "price": 18900,
+      "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0018/A00000018833001ko.jpg",
+      "stock_status": "재고있음"
+    }
+  ]
+}
+

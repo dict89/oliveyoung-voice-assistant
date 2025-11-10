@@ -212,15 +212,30 @@ class OliveYoungVoiceBot:
     def _create_system_prompt(self) -> str:
         """봇의 시스템 프롬프트를 생성합니다."""
         
-        # 매장 정보 요약
-        stores_summary = "\n".join([
-            f"- {store['name']} ({store['store_id']}): {store['address']}"
-            for store in self.store_service.get_all_stores()
+        # 매장 정보
+        main_store = self.store_service.data.get("store", {})
+        store_name = main_store.get("store_name", "")
+        store_address = main_store.get("address", "")
+        store_phone = main_store.get("phone", "")
+        subway_info = main_store.get("subway_info", "")
+        
+        # 인기 제품 (할인율 높은 순 3개)
+        popular_products = self.store_service.get_popular_products(limit=3)
+        products_summary = "\n".join([
+            f"- {p['name']} (할인율 {p['discount_rate']}%, 판매가 {p['sale_price']:,}원)"
+            for p in popular_products
         ])
         
         # 카테고리 정보
         categories = self.store_service.get_categories()
         categories_summary = ", ".join(categories.keys())
+        
+        # 인근 매장 (5개만)
+        nearby_stores = self.store_service.data.get("nearby_stores", [])[:5]
+        nearby_summary = "\n".join([
+            f"- {store.get('name', '')}: {store.get('address', '')}"
+            for store in nearby_stores
+        ])
         
         prompt = f"""당신은 올리브영(Olive Young)의 친절한 AI 쇼핑 어시스턴트입니다.
 
@@ -230,21 +245,33 @@ class OliveYoungVoiceBot:
 - 항상 친절하고 전문적인 톤으로 응대합니다
 - 자연스러운 대화체를 사용합니다
 
-[제공 가능한 정보]
-1. 매장 위치, 영업시간, 연락처
-2. 매장별 특징 및 제공 서비스
-3. 교통 정보 및 주변 랜드마크
-4. 인기 제품 및 추천
-5. 제품 카테고리: {categories_summary}
+[메인 매장 정보]
+매장명: {store_name}
+주소: {store_address}
+전화: {store_phone}
+지하철: {subway_info}
 
-[현재 등록된 매장]
-{stores_summary}
+[현재 인기 제품 TOP 3]
+{products_summary}
+
+[제품 카테고리]
+{categories_summary}
+
+[인근 매장 (참고용)]
+{nearby_summary}
+
+[Function Calling 사용 규칙 - 매우 중요!]
+1. **제품 추천 시 반드시 show_product_images 함수를 호출**하여 이미지를 표시하세요
+   - 추천 제품의 name, image_url, sale_price, discount_rate 전달
+2. **매장 정보 안내 시 show_store_image 함수를 호출**하여 매장 이미지 표시
+   - 매장의 store_name, image_url, address 전달
+3. 함수 호출 후 간단히 "제품 이미지를 확인해주세요" 등으로 안내
 
 [응대 가이드라인]
 1. 고객의 질문을 정확히 이해하고 관련 정보를 제공하세요
-2. 매장 위치를 물으면 주소와 함께 가까운 지하철역이나 랜드마크를 안내하세요
+2. 매장 위치를 물으면 주소와 지하철 정보를 안내하세요
 3. 영업시간, 전화번호 등 구체적인 정보를 명확히 전달하세요
-4. 제품 추천 시에는 2-3개만 간단히 소개하세요
+4. 제품 추천 시에는 2-3개만 간단히 소개하고 **반드시 show_product_images 호출**
 5. 정보가 없는 경우 솔직히 말하고 다른 방법을 제안하세요
 6. **응답은 20-30초 이내로 매우 짧고 간결하게 작성하세요 (음성 대화)**
    - 핵심 정보만 2-3문장으로 전달
@@ -254,8 +281,8 @@ class OliveYoungVoiceBot:
 
 [중요]
 - 실제로 존재하지 않는 매장이나 제품 정보를 만들어내지 마세요
-- 위에 명시된 매장 정보만 사용하세요
-- 가격 정보는 제공하지 않습니다 (실시간으로 변경될 수 있음)
+- 위에 명시된 정보만 사용하세요
+- 가격 정보는 참고용으로만 제공 (실시간 변경 가능)
 - 의료적 조언이나 진단은 하지 마세요"""
         
         return prompt
@@ -305,11 +332,86 @@ class OliveYoungVoiceBot:
             voice_id=voice_id,  # 명확하고 활기찬 여성 음성
         )
         
-        # LLM 서비스 (대화 처리) - OpenAI
+        # Function calling tools 정의
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "show_product_images",
+                    "description": "제품 추천 시 제품 이미지를 팝업으로 표시합니다. 제품을 추천할 때 반드시 호출하세요.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "products": {
+                                "type": "array",
+                                "description": "표시할 제품 목록",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string", "description": "제품명"},
+                                        "image_url": {"type": "string", "description": "제품 이미지 URL"},
+                                        "sale_price": {"type": "number", "description": "판매가"},
+                                        "discount_rate": {"type": "number", "description": "할인율"}
+                                    },
+                                    "required": ["name", "image_url"]
+                                }
+                            }
+                        },
+                        "required": ["products"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "show_store_image",
+                    "description": "매장 정보 안내 시 매장 이미지를 팝업으로 표시합니다.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "store_name": {"type": "string", "description": "매장명"},
+                            "image_url": {"type": "string", "description": "매장 이미지 URL"},
+                            "address": {"type": "string", "description": "매장 주소"}
+                        },
+                        "required": ["store_name", "image_url"]
+                    }
+                }
+            }
+        ]
+        
+        # LLM 서비스 (대화 처리) - OpenAI with function calling
         llm = OpenAILLMService(
             api_key=self.openai_api_key,
-            model="gpt-4o-mini"
+            model="gpt-4o-mini",
+            tools=tools
         )
+        
+        # Function calling 핸들러 등록
+        @llm.event_handler("on_function_call")
+        async def on_function_call(llm, function_name, arguments):
+            """Function call 이벤트 핸들러"""
+            logger.info(f"🔧 Function called: {function_name}")
+            logger.info(f"📋 Arguments: {arguments}")
+            
+            if function_name == "show_product_images":
+                # 제품 이미지 표시
+                await broadcast_message({
+                    "type": "show_images",
+                    "content_type": "products",
+                    "data": arguments
+                })
+                return {"status": "success", "message": "제품 이미지가 표시되었습니다"}
+                
+            elif function_name == "show_store_image":
+                # 매장 이미지 표시
+                await broadcast_message({
+                    "type": "show_images",
+                    "content_type": "store",
+                    "data": arguments
+                })
+                return {"status": "success", "message": "매장 이미지가 표시되었습니다"}
+            
+            return {"status": "error", "message": "Unknown function"}
         
         # 메시지 초기화
         messages = [

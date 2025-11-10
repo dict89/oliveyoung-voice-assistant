@@ -11,7 +11,7 @@ import re
 class StoreService:
     """올리브영 매장 정보를 관리하고 검색하는 서비스"""
     
-    def __init__(self, data_path: str = "data/store_data.json"):
+    def __init__(self, data_path: str = "data/assistant_data.json"):
         """
         Args:
             data_path: 매장 데이터 JSON 파일 경로
@@ -23,10 +23,17 @@ class StoreService:
         """매장 데이터를 로드합니다."""
         try:
             with open(self.data_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # assistant_data.json 구조에 맞게 변환
+                return {
+                    "store": data.get("store", {}),
+                    "products": data.get("products", {}),
+                    "nearby_stores": data.get("nearby_stores", []),
+                    "stores": [data.get("store", {})] + data.get("nearby_stores", [])  # 호환성
+                }
         except FileNotFoundError:
             print(f"Warning: {self.data_path} not found. Using empty data.")
-            return {"stores": [], "categories": {}, "brands": {}}
+            return {"store": {}, "products": {}, "nearby_stores": [], "stores": []}
     
     def find_store_by_name(self, name: str) -> Optional[Dict]:
         """
@@ -199,5 +206,47 @@ class StoreService:
     
     def get_categories(self) -> Dict[str, List[str]]:
         """제품 카테고리 정보를 반환합니다."""
-        return self.data.get("categories", {})
+        products = self.data.get("products", {})
+        return products.get("by_category", {})
+    
+    def get_products_by_category(self, category: str) -> List[Dict]:
+        """카테고리별 제품 조회"""
+        products = self.data.get("products", {})
+        by_category = products.get("by_category", {})
+        return by_category.get(category, [])
+    
+    def get_all_products(self) -> List[Dict]:
+        """모든 제품 조회"""
+        products = self.data.get("products", {})
+        return products.get("all_products", [])
+    
+    def search_products(self, keyword: str, limit: int = 5) -> List[Dict]:
+        """키워드로 제품 검색"""
+        keyword_lower = keyword.lower()
+        results = []
+        
+        for product in self.get_all_products():
+            if keyword_lower in product.get("name", "").lower():
+                results.append(product)
+                if len(results) >= limit:
+                    break
+        
+        return results
+    
+    def get_popular_products(self, limit: int = 3) -> List[Dict]:
+        """인기 제품 조회 (할인율 높은 순)"""
+        products = self.get_all_products()
+        # 할인율 순으로 정렬
+        sorted_products = sorted(
+            products, 
+            key=lambda p: p.get("discount_rate", 0), 
+            reverse=True
+        )
+        return sorted_products[:limit]
+    
+    def get_main_store_image(self) -> Optional[str]:
+        """메인 매장 이미지 URL 반환"""
+        store = self.data.get("store", {})
+        images = store.get("store_images", [])
+        return images[0] if images else None
 

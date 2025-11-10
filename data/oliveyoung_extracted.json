@@ -1,0 +1,131 @@
+{
+  "store_name": "올리브영 명동 타운",
+  "store_id": "D101",
+  "crawled_at": "2025-11-10T16:19:09.931433",
+  "extraction_method": "html_parsing",
+  "selector_used": "#stockGoodsList li",
+  "categories": {
+    "스킨케어": [
+      {
+        "product_id": "",
+        "name": "[11월 올영픽] 에스트라 아토베리어365 크림 80ml 더블 기획(+에센스 25ML + 세라-히알 앰플 7ML)",
+        "brand": "",
+        "price": 59400,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023633808ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[NO.1 미스트세럼] 달바 퍼스트 스프레이 세럼 100ml 2개 기획",
+        "brand": "",
+        "price": 59800,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023272408ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[리즈PICK/수분광 수분천재크림] 에스네이처 아쿠아 스쿠알란 수분크림 60ml 더블 기획 (+광채거울)",
+        "brand": "",
+        "price": 43000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023523022ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[더블기획/1+1]토리든 다이브인 히알루론산 수딩 크림 더블 기획세트(100ml+100ml)",
+        "brand": "",
+        "price": 42000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0016/A00000016559831ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[수분진정] 닥터지 레드 블레미쉬 클리어 수딩 크림 70ml+30ml+세럼20ml 증정 기획 (튜브/자타입)",
+        "brand": "",
+        "price": 38000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0016/A00000016461585ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[11월 올영픽] 에스트라 아토베리어365 로션 150ml 기획 (하이드로에센스 25ml+세라-히알 앰플 7ml)",
+        "brand": "",
+        "price": 33000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0022/A00000022283407ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[보습 광채탄력] VT PDRN 에센스 100 30ml기획 (+1.5ml*3개+리들샷 100 1ml*3개)",
+        "brand": "",
+        "price": 45000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0022/A00000022948111ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[11/10 하루특가/11월 올영픽] 제로이드 인텐시브 크림 80ml 기획 (+인텐시브 크림 10ml+앰플 7ml)",
+        "brand": "",
+        "price": 32000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023642706ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      }
+    ],
+    "마스크/팩": [
+      {
+        "product_id": "",
+        "name": "[속보습세럼/단독기획] 토리든 다이브인 저분자 히알루론산 세럼 50ml 리필기획(+리필팩 50ml)",
+        "brand": "",
+        "price": 36000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0018/A00000018926132ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[150ml/속건조앰플] 웰라쥬 리얼 히알루로닉 블루 100 앰플 75ml 더블 기획 (+마스크1매)",
+        "brand": "",
+        "price": 50000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023524714ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[더보이즈 현재 이벤트/11월 파워팩] 아누아 피디알엔 히알루론산 수분 캡슐 미스트 100ml",
+        "brand": "",
+        "price": 35000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023744913ko.png?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      }
+    ],
+    "클렌징": [
+      {
+        "product_id": "",
+        "name": "[11월 올영픽] 라로슈포제 시카플라스트 밤 B5+ 100ml 기획 (+3ml*3ea 증정)",
+        "brand": "",
+        "price": 40000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023609906ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      },
+      {
+        "product_id": "",
+        "name": "[11월 올영픽] 라로슈포제 시카플라스트 멀티 리페어 크림 100ml 기획(시카밤 3ml+히알루세럼 1.5ml 증정)",
+        "brand": "",
+        "price": 50000,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023610105ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      }
+    ],
+    "기타": [
+      {
+        "product_id": "",
+        "name": "[11월 올영픽] 바이오더마 시카비오 포마드 100ml 더블 기획",
+        "brand": "",
+        "price": 53200,
+        "image_url": "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0021/A00000021256509ko.jpg?l=ko&rs=800x0",
+        "stock_status": "확인 필요"
+      }
+    ]
+  },
+  "total_products": 14,
+  "categories_count": 4
+}

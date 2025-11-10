@@ -337,6 +337,140 @@ async def root():
             .face-status-text {
                 color: #495057;
             }
+            
+            /* Image Popup Modal */
+            .image-modal {
+                display: none;
+                position: fixed;
+                z-index: 2000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.8);
+                animation: fadeIn 0.3s;
+            }
+            
+            .image-modal.active {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .image-modal-content {
+                background: white;
+                padding: 30px;
+                border-radius: 15px;
+                max-width: 90%;
+                max-height: 90%;
+                overflow-y: auto;
+                position: relative;
+            }
+            
+            .image-modal-close {
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                font-size: 30px;
+                font-weight: bold;
+                color: #999;
+                cursor: pointer;
+                background: none;
+                border: none;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                transition: all 0.3s;
+            }
+            
+            .image-modal-close:hover {
+                background: #f0f0f0;
+                color: #333;
+            }
+            
+            .product-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 20px;
+                margin-top: 20px;
+            }
+            
+            .product-card {
+                border: 1px solid #e0e0e0;
+                border-radius: 10px;
+                overflow: hidden;
+                transition: transform 0.3s, box-shadow 0.3s;
+            }
+            
+            .product-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            }
+            
+            .product-image {
+                width: 100%;
+                height: 250px;
+                object-fit: cover;
+                background: #f8f8f8;
+            }
+            
+            .product-info {
+                padding: 15px;
+            }
+            
+            .product-name {
+                font-size: 14px;
+                color: #333;
+                margin-bottom: 10px;
+                min-height: 40px;
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+            }
+            
+            .product-price {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            .discount-badge {
+                background: #ff4757;
+                color: white;
+                padding: 4px 8px;
+                border-radius: 5px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            
+            .sale-price {
+                font-size: 18px;
+                font-weight: bold;
+                color: #667eea;
+            }
+            
+            .store-image-container {
+                text-align: center;
+            }
+            
+            .store-image {
+                max-width: 100%;
+                max-height: 500px;
+                border-radius: 10px;
+                margin: 20px 0;
+            }
+            
+            .store-info-text {
+                margin-top: 15px;
+                color: #666;
+                line-height: 1.6;
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
         </style>
     </head>
     <body>
@@ -344,6 +478,14 @@ async def root():
         <div id="faceStatus" class="face-status">
             <div id="faceStatusIcon" class="face-status-icon red"></div>
             <span id="faceStatusText" class="face-status-text">카메라 대기중...</span>
+        </div>
+        
+        <!-- Image Modal -->
+        <div id="imageModal" class="image-modal">
+            <div class="image-modal-content">
+                <button class="image-modal-close" onclick="closeImageModal()">&times;</button>
+                <div id="imageModalBody"></div>
+            </div>
         </div>
         
         <div class="container">
@@ -437,6 +579,73 @@ async def root():
                 const chatHistory = document.getElementById('chatHistory');
                 chatHistory.innerHTML = '';
             }
+            
+            // Image Modal Functions
+            function showProductImages(products) {
+                const modal = document.getElementById('imageModal');
+                const modalBody = document.getElementById('imageModalBody');
+                
+                let html = '<h2 style="margin-bottom: 20px; color: #667eea;">🛍️ 추천 제품</h2>';
+                html += '<div class="product-grid">';
+                
+                products.forEach(product => {
+                    html += `
+                        <div class="product-card">
+                            <img src="${product.image_url}" alt="${product.name}" class="product-image" 
+                                 onerror="this.src='https://via.placeholder.com/250x250?text=No+Image'">
+                            <div class="product-info">
+                                <div class="product-name">${product.name}</div>
+                                <div class="product-price">
+                                    ${product.discount_rate ? `<span class="discount-badge">${product.discount_rate}%</span>` : ''}
+                                    ${product.sale_price ? `<span class="sale-price">${product.sale_price.toLocaleString()}원</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+                modalBody.innerHTML = html;
+                modal.classList.add('active');
+                
+                console.log('✅ Product images displayed:', products.length);
+            }
+            
+            function showStoreImage(storeData) {
+                const modal = document.getElementById('imageModal');
+                const modalBody = document.getElementById('imageModalBody');
+                
+                let html = `
+                    <div class="store-image-container">
+                        <h2 style="margin-bottom: 20px; color: #667eea;">🏪 ${storeData.store_name}</h2>
+                        <img src="${storeData.image_url}" alt="${storeData.store_name}" class="store-image"
+                             onerror="this.src='https://via.placeholder.com/600x400?text=No+Image'">
+                        <div class="store-info-text">
+                            <p><strong>📍 주소:</strong> ${storeData.address || ''}</p>
+                        </div>
+                    </div>
+                `;
+                
+                modalBody.innerHTML = html;
+                modal.classList.add('active');
+                
+                console.log('✅ Store image displayed:', storeData.store_name);
+            }
+            
+            function closeImageModal() {
+                const modal = document.getElementById('imageModal');
+                modal.classList.remove('active');
+            }
+            
+            // Close modal on background click
+            document.addEventListener('DOMContentLoaded', () => {
+                const modal = document.getElementById('imageModal');
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        closeImageModal();
+                    }
+                });
+            });
             
             // Inactivity Timeout Functions
             function resetInactivityTimer() {
@@ -836,6 +1045,15 @@ async def root():
                             } else if (data.type === 'response' && data.speaker === 'assistant' && data.text) {
                                 console.log('✅ Adding assistant message:', data.text);
                                 addChatMessage('assistant', data.text);
+                            } else if (data.type === 'show_images') {
+                                // 이미지 팝업 표시
+                                console.log('🖼️ Showing images:', data.content_type);
+                                
+                                if (data.content_type === 'products' && data.data && data.data.products) {
+                                    showProductImages(data.data.products);
+                                } else if (data.content_type === 'store' && data.data) {
+                                    showStoreImage(data.data);
+                                }
                             }
                         } catch (e) {
                             console.error('Error parsing chat message:', e);

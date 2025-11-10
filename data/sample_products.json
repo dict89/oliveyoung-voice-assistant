@@ -1,0 +1,218 @@
+{
+  "store_name": "올리브영 명동 타운",
+  "store_id": "D101",
+  "crawled_at": "2025-11-10T15:00:00",
+  "categories": {
+    "스킨케어": [
+      {
+        "product_id": "A001234567",
+        "name": "토리든 다이브인 저분자 히알루론산 세럼",
+        "brand": "토리든",
+        "price": 25000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0019/A00000019067001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "저분자 히알루론산 세럼으로 피부 깊숙이 수분 공급"
+      },
+      {
+        "product_id": "A001234568",
+        "name": "라운드랩 1025 독도 토너",
+        "brand": "라운드랩",
+        "price": 18900,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0018/A00000018833001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "울릉도 해양 심층수로 만든 저자극 수분 토너"
+      },
+      {
+        "product_id": "A001234569",
+        "name": "코스알엑스 어드밴스드 스네일 96 뮤신 파워 에센스",
+        "brand": "코스알엑스",
+        "price": 21000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0013/A00000013018001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "96% 달팽이 점액 여과물로 피부 재생과 보습"
+      },
+      {
+        "product_id": "A001234570",
+        "name": "아이소이 불가리안 로즈 토너",
+        "brand": "아이소이",
+        "price": 32000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0015/A00000015420001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "불가리안 로즈 워터 함유 저자극 토너"
+      },
+      {
+        "product_id": "A001234571",
+        "name": "닥터자르트 시카페어 크림",
+        "brand": "닥터자르트",
+        "price": 38000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0012/A00000012345001ko.jpg",
+        "stock_status": "품절",
+        "description": "센텔라 아시아티카 추출물로 피부 진정"
+      }
+    ],
+    "메이크업": [
+      {
+        "product_id": "A002234567",
+        "name": "롬앤 쥬시 래스팅 틴트",
+        "brand": "롬앤",
+        "price": 8900,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0017/A00000017123001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "생생한 컬러와 오래가는 지속력"
+      },
+      {
+        "product_id": "A002234568",
+        "name": "클리오 킬커버 파운웨어 쿠션",
+        "brand": "클리오",
+        "price": 25000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0016/A00000016789001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "높은 커버력과 촉촉한 수분 쿠션"
+      },
+      {
+        "product_id": "A002234569",
+        "name": "에뛰드 픽싱 틴트",
+        "brand": "에뛰드",
+        "price": 7900,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0014/A00000014567001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "번지지 않고 선명한 컬러 유지"
+      },
+      {
+        "product_id": "A002234570",
+        "name": "페리페라 잉크 더 벨벳",
+        "brand": "페리페라",
+        "price": 9500,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0015/A00000015678001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "부드러운 벨벳 텍스처의 립 틴트"
+      },
+      {
+        "product_id": "A002234571",
+        "name": "더샘 커버 퍼펙션 팁 컨실러",
+        "brand": "더샘",
+        "price": 6500,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0013/A00000013456001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "완벽한 커버력의 스테디셀러 컨실러"
+      }
+    ],
+    "마스크팩": [
+      {
+        "product_id": "A003234567",
+        "name": "메디힐 N.M.F 아쿠아링 앰플 마스크",
+        "brand": "메디힐",
+        "price": 1500,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0011/A00000011234001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "수분 충전 집중 케어 마스크팩"
+      },
+      {
+        "product_id": "A003234568",
+        "name": "티르티르 마스크 핏 레드 쿠션",
+        "brand": "티르티르",
+        "price": 2000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0019/A00000019876001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "진정과 보습을 동시에"
+      },
+      {
+        "product_id": "A003234569",
+        "name": "토리든 다이브인 마스크",
+        "brand": "토리든",
+        "price": 1800,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0018/A00000018765001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "저분자 히알루론산 마스크"
+      },
+      {
+        "product_id": "A003234570",
+        "name": "CNP 프로폴리스 앰플 마스크",
+        "brand": "CNP",
+        "price": 2500,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0017/A00000017654001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "프로폴리스 추출물로 피부 진정"
+      },
+      {
+        "product_id": "A003234571",
+        "name": "아누아 어성초 77% 수딩 마스크",
+        "brand": "아누아",
+        "price": 1600,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0020/A00000020123001ko.jpg",
+        "stock_status": "품절",
+        "description": "어성초 추출물로 피부 진정과 보습"
+      }
+    ],
+    "클렌징": [
+      {
+        "product_id": "A004234567",
+        "name": "바닐라코 클린잇제로 클렌징밤 오리지널",
+        "brand": "바닐라코",
+        "price": 18900,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0010/A00000010987001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "메이크업과 노폐물을 말끔하게"
+      },
+      {
+        "product_id": "A004234568",
+        "name": "코스알엑스 로우 pH 굿모닝 젤 클렌저",
+        "brand": "코스알엑스",
+        "price": 12000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0013/A00000013019001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "약산성 pH로 피부 자극 최소화"
+      },
+      {
+        "product_id": "A004234569",
+        "name": "센카 퍼펙트 휩 클렌징 폼",
+        "brand": "센카",
+        "price": 8900,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0009/A00000009876001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "풍성한 거품으로 깨끗한 세안"
+      },
+      {
+        "product_id": "A004234570",
+        "name": "이니스프리 그린티 클렌징 폼",
+        "brand": "이니스프리",
+        "price": 7000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0008/A00000008765001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "제주 녹차로 만든 순한 클렌징"
+      }
+    ],
+    "선케어": [
+      {
+        "product_id": "A005234567",
+        "name": "라운드랩 자작나무 수분 선크림",
+        "brand": "라운드랩",
+        "price": 15900,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0018/A00000018834001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "SPF50+ PA++++ 수분 가득한 선크림"
+      },
+      {
+        "product_id": "A005234568",
+        "name": "이니스프리 톤업 노세범 선크림",
+        "brand": "이니스프리",
+        "price": 12000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0016/A00000016543001ko.jpg",
+        "stock_status": "재고있음",
+        "description": "피지 컨트롤과 톤업 효과"
+      },
+      {
+        "product_id": "A005234569",
+        "name": "어뮤즈 딜라이트 크리스탈 선스틱",
+        "brand": "어뮤즈",
+        "price": 14000,
+        "image_url": "https://image.oliveyoung.co.kr/uploads/images/goods/400/10/0000/0019/A00000019321001ko.jpg",
+        "stock_status": "품절",
+        "description": "휴대 간편한 스틱형 선크림"
+      }
+    ]
+  },
+  "total_products": 24,
+  "categories_count": 5
+}
+
