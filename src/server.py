@@ -509,6 +509,10 @@ async def root():
                 🎙️ 대화 시작하기
             </button>
             
+            <button class="btn" onclick="testImagePopup()" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); margin-top: 10px;">
+                🖼️ 이미지 팝업 테스트
+            </button>
+            
             <div id="videoContainer"></div>
             
             <div id="chatContainer" class="chat-container">
@@ -646,6 +650,18 @@ async def root():
                     }
                 });
             });
+            
+            // Test Image Popup
+            async function testImagePopup() {
+                try {
+                    console.log('🧪 Testing image popup...');
+                    const response = await fetch('/api/test-images');
+                    const result = await response.json();
+                    console.log('✅ Test result:', result);
+                } catch (error) {
+                    console.error('❌ Test failed:', error);
+                }
+            }
             
             // Inactivity Timeout Functions
             function resetInactivityTimer() {
@@ -1162,6 +1178,24 @@ async def start_bot(request: BotStartRequest):
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/test-images")
+async def test_images():
+    """이미지 팝업 테스트 엔드포인트"""
+    from .store_service import StoreService
+    
+    store_service = StoreService()
+    products = store_service.get_popular_products(limit=3)
+    
+    # 모든 WebSocket에 이미지 전송
+    await websocket_manager.broadcast_message({
+        "type": "show_images",
+        "content_type": "products",
+        "data": {"products": products}
+    })
+    
+    return {"status": "success", "products_sent": len(products)}
 
 
 @app.websocket("/api/chat-ws")
