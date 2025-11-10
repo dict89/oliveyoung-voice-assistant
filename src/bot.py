@@ -190,6 +190,7 @@ class ResponseLogger(FrameProcessor):
         self.response_buffer = ""  # 응답 버퍼링
         self.products_sent = False  # 제품 이미지 전송 여부
         self.store_sent = False     # 매장 이미지 전송 여부
+        self.response_sent = False  # 응답 채팅창 전송 여부
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -198,13 +199,10 @@ class ResponseLogger(FrameProcessor):
         if isinstance(frame, TextFrame):
             text = frame.text
             if text and text.strip():
-                # 스트리밍 로그
-                logger.info(f"🤖 [ASSISTANT CHUNK]: {text}")
-                
-                # 응답 버퍼에 누적
+                # 응답 버퍼에 누적 (로그는 나중에 한 번만)
                 self.response_buffer += text
                 
-                # 태그 완성 여부 확인 (] 로 끝나는 태그)
+                # 태그 완성 여부 확인
                 import re
                 
                 # [PRODUCTS:...] 완성 체크 (한 번만 전송)
@@ -229,7 +227,7 @@ class ResponseLogger(FrameProcessor):
                                 "data": {"products": selected_products}
                             })
                             logger.info(f"✅ Sent product images: {len(selected_products)} items")
-                            self.products_sent = True  # 전송 완료 플래그
+                            self.products_sent = True
                 
                 # [STORE:...] 완성 체크 (한 번만 전송)
                 if not self.store_sent:
@@ -253,35 +251,45 @@ class ResponseLogger(FrameProcessor):
                                     }
                                 })
                                 logger.info(f"✅ Sent store image")
-                                self.store_sent = True  # 전송 완료 플래그
+                                self.store_sent = True
                 
-                # 스트리밍 중에는 채팅창에 전송하지 않음 (TTS만 진행)
-                # 완성된 응답은 EndFrame에서 전송
-        
-        # 응답 종료 시 전체 응답 전송 및 버퍼 리셋
-        elif isinstance(frame, EndFrame):
-            if self.response_buffer:
-                logger.info(f"📝 Complete response: {self.response_buffer}")
-                
-                # 태그 제거 후 브라우저로 전송 (한 번만!)
-                import re
-                clean_text = re.sub(r'\[PRODUCTS:[^\]]*\]', '', self.response_buffer)
-                clean_text = re.sub(r'\[STORE:[^\]]*\]', '', clean_text).strip()
-                
-                if clean_text:
-                    await broadcast_message({
-                        "type": "response",
-                        "speaker": "assistant",
-                        "text": clean_text
-                    })
-                    logger.info(f"✅ Sent complete response to chat")
-                
-                # 버퍼 및 플래그 리셋
-                self.response_buffer = ""
-                self.products_sent = False
-                self.store_sent = False
+                # 문장 종료 감지 (., !, ?, 한국어 종결어미 등)
+                # 응답이 끝났다고 판단되면 전송
+                if text.rstrip().endswith(('.', '!', '?', '다', '요', '니다', '습니다', ']')):
+                    # 완성된 것 같으면 전송
+                    if len(self.response_buffer) > 5:  # 최소 길이 체크
+                        await self._send_complete_response()
         
         await self.push_frame(frame, direction)
+    
+    async def _send_complete_response(self):
+        """완성된 응답을 전송"""
+        if not self.response_buffer or self.response_sent:
+            return  # 이미 전송했거나 버퍼 비어있음
+        
+        logger.info(f"🤖 [ASSISTANT]: {self.response_buffer}")
+        
+        # 태그 제거 후 브라우저로 전송
+        import re
+        clean_text = re.sub(r'\[PRODUCTS:[^\]]*\]', '', self.response_buffer)
+        clean_text = re.sub(r'\[STORE:[^\]]*\]', '', clean_text).strip()
+        
+        if clean_text:
+            await broadcast_message({
+                "type": "response",
+                "speaker": "assistant",
+                "text": clean_text
+            })
+            logger.info(f"✅ Sent complete response to chat")
+        
+        # 전송 완료 플래그
+        self.response_sent = True
+        
+        # 다음 응답을 위해 버퍼만 리셋 (플래그는 새 응답 시작 시 리셋)
+        self.response_buffer = ""
+        self.products_sent = False
+        self.store_sent = False
+        self.response_sent = False
 
 
 class OliveYoungVoiceBot:
