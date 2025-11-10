@@ -651,13 +651,35 @@ async def root():
                 });
             });
             
-            // Test Image Popup
+            // Test Image Popup (직접 표시)
             async function testImagePopup() {
                 try {
                     console.log('🧪 Testing image popup...');
-                    const response = await fetch('/api/test-images');
-                    const result = await response.json();
-                    console.log('✅ Test result:', result);
+                    
+                    // 샘플 제품 데이터 (직접 표시)
+                    const sampleProducts = [
+                        {
+                            name: "[11월 올영픽] 에스트라 아토베리어365 크림 80ml 더블 기획",
+                            image_url: "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023633808ko.jpg?l=ko&rs=800x0",
+                            sale_price: 44500,
+                            discount_rate: 25
+                        },
+                        {
+                            name: "[속보습세럼] 토리든 다이브인 저분자 히알루론산 세럼 50ml",
+                            image_url: "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0018/A00000018926132ko.jpg?l=ko&rs=800x0",
+                            sale_price: 25650,
+                            discount_rate: 28
+                        },
+                        {
+                            name: "[NO.1 미스트세럼] 달바 퍼스트 스프레이 세럼 100ml",
+                            image_url: "https://image.oliveyoung.co.kr/cfimages/cf-goods/uploads/images/thumbnails/10/0000/0023/A00000023272408ko.jpg?l=ko&rs=800x0",
+                            sale_price: 32500,
+                            discount_rate: 45
+                        }
+                    ];
+                    
+                    showProductImages(sampleProducts);
+                    console.log('✅ Test popup displayed');
                 } catch (error) {
                     console.error('❌ Test failed:', error);
                 }
