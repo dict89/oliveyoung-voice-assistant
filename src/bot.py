@@ -332,15 +332,18 @@ class OliveYoungVoiceBot:
         store_phone = main_store.get("phone", "")
         subway_info = main_store.get("subway_info", "")
         
-        # 모든 제품 목록 (ID 포함) - 할루시네이션 방지
-        all_products = self.store_service.get_all_products()
-        products_summary = "\n".join([
-            f"- [{p['product_id']}] {p['name'][:60]}... (할인 {p['discount_rate']}%, {p['sale_price']:,}원)"
-            for p in all_products
-        ])
-        
-        # 카테고리 정보
+        # 카테고리별 제품 목록 (ID 포함) - 할루시네이션 방지
         categories = self.store_service.get_categories()
+        
+        products_by_category = []
+        for category_name, category_products in categories.items():
+            products_by_category.append(f"\n[{category_name}]")
+            for p in category_products:
+                products_by_category.append(
+                    f"  - [{p['product_id']}] {p['name'][:60]}... (할인 {p['discount_rate']}%, {p['sale_price']:,}원)"
+                )
+        
+        products_summary = "\n".join(products_by_category)
         categories_summary = ", ".join(categories.keys())
         
         # 인근 매장 (5개만)
