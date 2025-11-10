@@ -159,13 +159,7 @@ Your answer (YES or NO):"""
 
 
 class TranscriptLogger(FrameProcessor):
-    """대화 내용을 WebSocket으로 전송하는 프로세서 (Intent:YES만 도달)"""
-    
-    def __init__(self):
-        super().__init__()
-        # StoreService 인스턴스 (제품/매장 정보 조회용)
-        from .store_service import StoreService
-        self.store_service = StoreService()
+    """사용자 입력을 WebSocket으로 전송하는 프로세서 (Intent:YES만 도달)"""
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -182,8 +176,23 @@ class TranscriptLogger(FrameProcessor):
                     "text": text.strip()  # 공백 제거
                 })
         
-        # LLM 응답 텍스트
-        elif isinstance(frame, TextFrame):
+        await self.push_frame(frame, direction)
+
+
+class ResponseLogger(FrameProcessor):
+    """LLM 응답을 로깅하고 태그를 파싱하는 프로세서"""
+    
+    def __init__(self):
+        super().__init__()
+        # StoreService 인스턴스 (제품/매장 정보 조회용)
+        from .store_service import StoreService
+        self.store_service = StoreService()
+    
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        
+        # LLM 응답 텍스트 (TextFrame)
+        if isinstance(frame, TextFrame):
             text = frame.text
             if text and text.strip():
                 logger.info(f"🤖 [ASSISTANT]: {text}")
@@ -451,8 +460,11 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
         # 의도 판단 필터 (판단 LLM으로 AI 어시스턴트 호출 의도 판단)
         intent_filter = IntentDetectionFilter(self.openai_api_key)
         
-        # 대화 내용 로거 (전역 WebSocket 매니저 사용) - Intent:YES만 기록
+        # 사용자 입력 로거 (Intent:YES만)
         transcript_logger = TranscriptLogger()
+        
+        # LLM 응답 로거 (태그 파싱 및 이미지 표시)
+        response_logger = ResponseLogger()
         
         # 파이프라인 구성 (OpenAI Whisper STT 사용)
         pipeline = Pipeline(
@@ -460,9 +472,10 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
                 transport.input(),           # 오디오 입력
                 stt,                         # OpenAI Whisper (한국어/영어 자동 감지)
                 intent_filter,               # 의도 판단 LLM (필터링) - NO는 여기서 차단
-                transcript_logger,           # 로깅 (Intent:YES만 기록)
+                transcript_logger,           # 사용자 입력 로깅 (Intent:YES만)
                 user_response_aggregator,    # 사용자 메시지 집계
                 llm,                         # 응답 LLM (실제 답변)
+                response_logger,             # LLM 응답 로깅 및 태그 파싱 (여기서 이미지 표시!)
                 tts,                         # 텍스트 → 음성
                 transport.output(),          # 오디오 출력
                 assistant_response_aggregator  # 어시스턴트 응답 집계
