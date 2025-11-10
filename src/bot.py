@@ -181,20 +181,6 @@ class TranscriptLogger(FrameProcessor):
                     "speaker": "user",
                     "text": text.strip()  # 공백 제거
                 })
-                
-                # 제품 추천 요청 감지 시 자동으로 인기 제품 표시
-                text_lower = text.lower()
-                product_keywords = ["추천", "제품", "인기", "product", "recommend", "popular"]
-                if any(keyword in text_lower for keyword in product_keywords):
-                    logger.info(f"🎯 Product recommendation detected, showing popular products")
-                    popular_products = self.store_service.get_popular_products(limit=3)
-                    if popular_products:
-                        await broadcast_message({
-                            "type": "show_images",
-                            "content_type": "products",
-                            "data": {"products": popular_products}
-                        })
-                        logger.info(f"✅ Auto-displayed {len(popular_products)} popular products")
         
         # LLM 응답 텍스트
         elif isinstance(frame, TextFrame):
@@ -423,11 +409,38 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
             model="gpt-4o-mini"
         )
         
-        # 메시지 초기화
+        # 메시지 초기화 (few-shot 예제 포함)
         messages = [
             {
                 "role": "system",
                 "content": self.system_prompt
+            },
+            # Few-shot 예제 1: 제품 추천
+            {
+                "role": "user",
+                "content": "인기 제품 추천해줘"
+            },
+            {
+                "role": "assistant",
+                "content": "토리든 다이브인 히알루론산 세럼과 달바 퍼스트 스프레이 세럼 추천드립니다. [PRODUCTS:A000000189261,A000000232724]"
+            },
+            # Few-shot 예제 2: 매장 정보
+            {
+                "role": "user",
+                "content": "매장 어디 있어?"
+            },
+            {
+                "role": "assistant",
+                "content": "서울 중구 명동길 53에 있습니다. 명동역 8번 출구로 나오시면 됩니다. [STORE:D176]"
+            },
+            # Few-shot 예제 3: 제품 추천 (다른 예시)
+            {
+                "role": "user",
+                "content": "스킨케어 제품 추천"
+            },
+            {
+                "role": "assistant",
+                "content": "에스트라 아토베리어 크림, 라로슈포제 시카플라스트, 웰라쥬 히알루로닉 앰플 추천드립니다. [PRODUCTS:A000000236338,A000000236101,A000000235247]"
             }
         ]
         
