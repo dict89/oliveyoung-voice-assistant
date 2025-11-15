@@ -51,6 +51,7 @@ class ElevenLabsSTTService(FrameProcessor):
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.connection_task: Optional[asyncio.Task] = None
         self.is_connected = False
+        self.session_started = False  # 세션 시작 여부
         
         # 오디오 형식 (PCM)
         # sample_rate에 따라 encoding 결정
@@ -63,6 +64,10 @@ class ElevenLabsSTTService(FrameProcessor):
         # 재연결 관련
         self.reconnect_attempts = 0
         self.max_reconnect_attempts = 3
+        
+        # 오디오 통계 (디버깅용)
+        self.audio_chunks_sent = 0
+        self.audio_bytes_sent = 0
     
     def _build_websocket_url(self) -> str:
         """WebSocket URL 구성 (SDK와 동일한 방식)"""
@@ -123,6 +128,7 @@ class ElevenLabsSTTService(FrameProcessor):
             self.connection_task = asyncio.create_task(self._receive_messages())
             
             logger.info(f"✅ ElevenLabs STT connected (model: {self.model_id}, sample_rate: {self.sample_rate}, language: {self.language_code or 'auto'})")
+            logger.info(f"⏳ Waiting for session_started message...")
             
         except websockets.exceptions.InvalidStatusCode as e:
             logger.error(f"❌ ElevenLabs STT connection error: HTTP {e.status_code}")
@@ -172,38 +178,52 @@ class ElevenLabsSTTService(FrameProcessor):
     async def _receive_messages(self):
         """WebSocket 메시지 수신 루프"""
         try:
+            logger.info("📡 Starting message receiver loop...")
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
                     await self._handle_message(data)
-                except json.JSONDecodeError:
-                    logger.warning(f"⚠️ Invalid JSON received: {message}")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"⚠️ Invalid JSON received: {message[:100]}")
+                    logger.warning(f"⚠️ JSON error: {e}")
                 except Exception as e:
                     logger.error(f"❌ Error handling message: {e}")
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning("⚠️ ElevenLabs WebSocket connection closed")
+                    logger.error(f"❌ Error type: {type(e).__name__}")
+                    import traceback
+                    logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(f"⚠️ ElevenLabs WebSocket connection closed: {e}")
             self.is_connected = False
+            self.session_started = False
         except Exception as e:
             logger.error(f"❌ Error receiving messages: {e}")
+            logger.error(f"❌ Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             self.is_connected = False
+            self.session_started = False
     
     async def _handle_message(self, data: dict):
         """ElevenLabs 메시지 처리"""
         message_type = data.get("type")
         
+        # 모든 메시지 타입 로깅 (디버깅용)
+        logger.debug(f"📨 Received message type: {message_type}")
+        
         if message_type == "session_started":
             logger.info("✅ ElevenLabs session started")
+            self.session_started = True  # 세션 시작 플래그 설정
             # 세션 설정 확인
             session_config = data.get("session", {})
-            logger.debug(f"Session config: {session_config}")
+            logger.info(f"📋 Session config: {session_config}")
         
         elif message_type == "partial_transcript":
             # 부분 전사 결과 (실시간 업데이트)
             text = data.get("text", "")
             if text:
                 self.partial_transcript = text
-                # 부분 전사는 로깅만 (아직 TranscriptionFrame 생성 안 함)
-                logger.debug(f"📝 Partial: {text}")
+                # 부분 전사는 로깅 (INFO 레벨로 변경)
+                logger.info(f"📝 Partial transcript: {text}")
         
         elif message_type == "committed_transcript":
             # 확정된 전사 결과 (최종)
@@ -213,7 +233,7 @@ class ElevenLabsSTTService(FrameProcessor):
                 self.partial_transcript = ""
                 
                 # TranscriptionFrame 생성 및 전달
-                logger.info(f"✅ Committed: {text.strip()}")
+                logger.info(f"✅ Committed transcript: {text.strip()}")
                 frame = TranscriptionFrame(text=text.strip(), user_id="user")
                 await self.push_frame(frame, FrameDirection.DOWNSTREAM)
         
@@ -225,7 +245,7 @@ class ElevenLabsSTTService(FrameProcessor):
                 self.partial_transcript = ""
                 
                 # TranscriptionFrame 생성 및 전달
-                logger.info(f"✅ Committed (with timestamps): {text.strip()}")
+                logger.info(f"✅ Committed transcript (with timestamps): {text.strip()}")
                 frame = TranscriptionFrame(text=text.strip(), user_id="user")
                 await self.push_frame(frame, FrameDirection.DOWNSTREAM)
         
@@ -234,29 +254,42 @@ class ElevenLabsSTTService(FrameProcessor):
             error_type = error.get("type", "unknown")
             error_message = error.get("message", "Unknown error")
             logger.error(f"❌ ElevenLabs error ({error_type}): {error_message}")
+            logger.error(f"❌ Full error data: {data}")
             self.is_connected = False
+            self.session_started = False
         
         elif message_type == "auth_error":
             error = data.get("error", {})
             error_message = error.get("message", "Authentication error")
             logger.error(f"❌ ElevenLabs authentication error: {error_message}")
+            logger.error(f"❌ Full error data: {data}")
             self.is_connected = False
+            self.session_started = False
         
         elif message_type == "quota_exceeded":
             error = data.get("error", {})
             error_message = error.get("message", "Quota exceeded")
             logger.error(f"❌ ElevenLabs quota exceeded: {error_message}")
+            logger.error(f"❌ Full error data: {data}")
             self.is_connected = False
+            self.session_started = False
         
         elif message_type == "transcriber_error":
             error = data.get("error", {})
             error_message = error.get("message", "Transcriber error")
             logger.error(f"❌ ElevenLabs transcriber error: {error_message}")
+            logger.error(f"❌ Full error data: {data}")
         
         elif message_type == "input_error":
             error = data.get("error", {})
             error_message = error.get("message", "Input error")
             logger.error(f"❌ ElevenLabs input error: {error_message}")
+            logger.error(f"❌ Full error data: {data}")
+        
+        else:
+            # 알 수 없는 메시지 타입
+            logger.warning(f"⚠️ Unknown message type: {message_type}")
+            logger.debug(f"⚠️ Full message data: {data}")
     
     async def _send_audio(self, audio_data: bytes):
         """오디오 데이터를 ElevenLabs로 전송
@@ -264,6 +297,12 @@ class ElevenLabsSTTService(FrameProcessor):
         참고: SDK에서는 audio_base_64 필드만 전송 (타입 없이)
         """
         if not self.is_connected or not self.websocket:
+            logger.warning("⚠️ Cannot send audio: not connected")
+            return
+        
+        if not self.session_started:
+            # 세션이 시작되지 않았으면 오디오 전송하지 않음
+            logger.debug("⚠️ Cannot send audio: session not started yet")
             return
         
         try:
@@ -278,12 +317,23 @@ class ElevenLabsSTTService(FrameProcessor):
             
             await self.websocket.send(json.dumps(message))
             
+            # 통계 업데이트
+            self.audio_chunks_sent += 1
+            self.audio_bytes_sent += len(audio_data)
+            
+            # 주기적으로 로깅 (매 100개 청크마다)
+            if self.audio_chunks_sent % 100 == 0:
+                logger.debug(f"📤 Sent {self.audio_chunks_sent} audio chunks ({self.audio_bytes_sent} bytes total)")
+            
         except websockets.exceptions.ConnectionClosed:
             logger.warning("⚠️ ElevenLabs WebSocket connection closed while sending audio")
             self.is_connected = False
+            self.session_started = False
         except Exception as e:
             logger.error(f"❌ Error sending audio: {e}")
+            logger.error(f"❌ Error type: {type(e).__name__}")
             self.is_connected = False
+            self.session_started = False
     
     async def _commit_transcript(self):
         """전사 세그먼트 확정 (수동 커밋, commit_strategy가 MANUAL일 때만 사용)"""
@@ -311,10 +361,20 @@ class ElevenLabsSTTService(FrameProcessor):
         if isinstance(frame, AudioRawFrame):
             if not self.is_connected:
                 # 연결되지 않은 경우 연결 시도
+                logger.info("🔌 Not connected, attempting to connect...")
                 try:
                     await self._connect()
-                    # 연결 후 잠시 대기 (세션 시작 대기)
-                    await asyncio.sleep(0.1)
+                    # 세션 시작을 기다림 (최대 5초)
+                    max_wait = 50  # 0.1초 * 50 = 5초
+                    waited = 0
+                    while not self.session_started and waited < max_wait:
+                        await asyncio.sleep(0.1)
+                        waited += 1
+                    
+                    if not self.session_started:
+                        logger.warning("⚠️ Session not started after 5 seconds, continuing anyway...")
+                    else:
+                        logger.info("✅ Session started, ready to receive audio")
                 except Exception as e:
                     logger.error(f"❌ Failed to connect to ElevenLabs: {e}")
                     return
@@ -338,7 +398,12 @@ class ElevenLabsSTTService(FrameProcessor):
                 
                 # 오디오 데이터 전송 (빈 데이터는 건너뜀)
                 if audio_bytes and len(audio_bytes) > 0:
+                    # 처음 몇 개 프레임만 로깅
+                    if self.audio_chunks_sent < 5:
+                        logger.debug(f"🎵 Sending audio chunk {self.audio_chunks_sent + 1}: {len(audio_bytes)} bytes")
                     await self._send_audio(audio_bytes)
+            else:
+                logger.warning("⚠️ AudioRawFrame has no audio data")
         
         # 다른 프레임은 그대로 전달
         else:
@@ -347,6 +412,7 @@ class ElevenLabsSTTService(FrameProcessor):
     async def cleanup(self):
         """정리 작업"""
         self.is_connected = False
+        self.session_started = False
         
         if self.connection_task:
             self.connection_task.cancel()
@@ -361,4 +427,4 @@ class ElevenLabsSTTService(FrameProcessor):
             except Exception as e:
                 logger.error(f"❌ Error closing WebSocket: {e}")
         
-        logger.info("🧹 ElevenLabs STT cleanup completed")
+        logger.info(f"🧹 ElevenLabs STT cleanup completed (sent {self.audio_chunks_sent} chunks, {self.audio_bytes_sent} bytes)")
