@@ -130,19 +130,24 @@ class ElevenLabsSTTService(FrameProcessor):
             logger.info(f"✅ ElevenLabs STT connected (model: {self.model_id}, sample_rate: {self.sample_rate}, language: {self.language_code or 'auto'})")
             logger.info(f"⏳ Waiting for session_started message...")
             
-            # 세션 시작 메시지를 기다림 (최대 5초)
+            # 세션 시작 메시지를 기다림 (최대 10초)
             # 문서에 따르면 WebSocket 연결 직후 session_started 이벤트가 와야 함
-            max_wait = 50  # 0.1초 * 50 = 5초
+            # _receive_messages가 별도 태스크로 실행되므로 여기서 기다려야 함
+            max_wait = 100  # 0.1초 * 100 = 10초
             waited = 0
             while not self.session_started and waited < max_wait:
                 await asyncio.sleep(0.1)
                 waited += 1
+                if waited % 10 == 0:  # 매 1초마다 로깅
+                    logger.debug(f"⏳ Still waiting for session_started... ({waited * 0.1:.1f}s)")
             
             if not self.session_started:
-                logger.warning("⚠️ session_started message not received after 5 seconds")
-                logger.warning("⚠️ This may indicate a connection issue")
+                logger.error("❌ session_started message not received after 10 seconds")
+                logger.error("❌ This indicates a connection or authentication issue")
+                logger.error("❌ Will not send audio until session starts")
+                # 연결은 유지하되, 세션이 시작될 때까지 오디오 전송 안 함
             else:
-                logger.info("✅ Session started successfully")
+                logger.info("✅ Session started successfully, ready to process audio")
             
         except websockets.exceptions.InvalidStatusCode as e:
             logger.error(f"❌ ElevenLabs STT connection error: HTTP {e.status_code}")
