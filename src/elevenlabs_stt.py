@@ -235,11 +235,14 @@ class ElevenLabsSTTService(FrameProcessor):
         logger.info(f"📨 Message type: {message_type}")
         
         if message_type == "session_started":
-            logger.info("✅ ElevenLabs session started")
+            logger.info("✅ ElevenLabs session started!")
             self.session_started = True  # 세션 시작 플래그 설정
-            # 세션 설정 확인
-            session_config = data.get("session", {})
-            logger.info(f"📋 Session config: {session_config}")
+            # 세션 설정 확인 (테스트 결과: config 필드에 있음, message_type 사용)
+            session_id = data.get("session_id", "")
+            session_config = data.get("config", {})  # session이 아니라 config 필드
+            logger.info(f"📋 Session ID: {session_id}")
+            logger.info(f"📋 Session config: {json.dumps(session_config, indent=2)}")
+            logger.info("🎵 Ready to send audio chunks")
         
         elif message_type == "partial_transcript":
             # 부분 전사 결과 (실시간 업데이트)
