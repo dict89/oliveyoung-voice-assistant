@@ -352,12 +352,20 @@ class ElevenLabsSTTService(FrameProcessor):
             # PCM 오디오를 base64로 인코딩
             audio_base64 = base64.b64encode(audio_data).decode('utf-8')
             
-            # 오디오 청크 전송 (문서와 SDK에 따르면 audio_base_64만 전송)
-            # 참고: https://elevenlabs.io/docs/cookbooks/speech-to-text/streaming
-            # 문서 예제: connection.send({ audioBase64: audioBase64, sampleRate: 16000 })
-            # 하지만 Python SDK를 보면 audio_base_64만 보내는 것 같음
+            # 오디오 청크 전송 (SDK 코드 기반)
+            # 참고: https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/realtime/connection.py
+            # SDK의 send 메서드는 다음 형식을 사용:
+            # {
+            #   "message_type": "input_audio_chunk",
+            #   "audio_base_64": "...",
+            #   "commit": False,
+            #   "sample_rate": 16000
+            # }
             message = {
+                "message_type": "input_audio_chunk",
                 "audio_base_64": audio_base64,
+                "commit": False,
+                "sample_rate": self.sample_rate,
             }
             
             logger.debug(f"📤 Sending audio chunk: {len(audio_base64)} base64 chars")
