@@ -130,6 +130,20 @@ class ElevenLabsSTTService(FrameProcessor):
             logger.info(f"✅ ElevenLabs STT connected (model: {self.model_id}, sample_rate: {self.sample_rate}, language: {self.language_code or 'auto'})")
             logger.info(f"⏳ Waiting for session_started message...")
             
+            # 세션 시작 메시지를 기다림 (최대 5초)
+            # 문서에 따르면 WebSocket 연결 직후 session_started 이벤트가 와야 함
+            max_wait = 50  # 0.1초 * 50 = 5초
+            waited = 0
+            while not self.session_started and waited < max_wait:
+                await asyncio.sleep(0.1)
+                waited += 1
+            
+            if not self.session_started:
+                logger.warning("⚠️ session_started message not received after 5 seconds")
+                logger.warning("⚠️ This may indicate a connection issue")
+            else:
+                logger.info("✅ Session started successfully")
+            
         except websockets.exceptions.InvalidStatusCode as e:
             logger.error(f"❌ ElevenLabs STT connection error: HTTP {e.status_code}")
             
@@ -179,6 +193,7 @@ class ElevenLabsSTTService(FrameProcessor):
         """WebSocket 메시지 수신 루프"""
         try:
             logger.info("📡 Starting message receiver loop...")
+            logger.info("📡 Waiting for first message from ElevenLabs...")
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
