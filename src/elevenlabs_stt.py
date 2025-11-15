@@ -59,9 +59,10 @@ class ElevenLabsSTTService(FrameProcessor):
             logger.info(f"📝 Language: {self.language or 'auto'}")
             
             # WebSocket URL 구성
-            # ElevenLabs 문서에 따르면: wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket?token={token}
+            # ElevenLabs 문서에 따르면: wss://api.elevenlabs.io/v1/realtime/scribe?token={token}
             # 참고: https://elevenlabs.io/docs/cookbooks/speech-to-text/streaming
-            base_url = "wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket"
+            # 참고: 실제 API 엔드포인트는 /v1/realtime/scribe 입니다 (not /v1/speech-to-text/realtime/websocket)
+            base_url = "wss://api.elevenlabs.io/v1/realtime/scribe"
             
             # 쿼리 파라미터 구성
             # ElevenLabs 문서에 따르면 토큰을 쿼리 파라미터로 전달
