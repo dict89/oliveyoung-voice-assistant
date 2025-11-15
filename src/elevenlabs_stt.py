@@ -208,7 +208,8 @@ class ElevenLabsSTTService(FrameProcessor):
         # 전체 메시지 로깅 (디버깅용)
         logger.info(f"📨 Received message: {json.dumps(data, indent=2)}")
         
-        message_type = data.get("type")
+        # ElevenLabs는 정상 메시지는 "type", 에러 메시지는 "message_type"을 사용
+        message_type = data.get("type") or data.get("message_type")
         
         # 모든 메시지 타입 로깅 (디버깅용)
         logger.info(f"📨 Message type: {message_type}")
@@ -284,10 +285,16 @@ class ElevenLabsSTTService(FrameProcessor):
             logger.error(f"❌ Full error data: {data}")
         
         elif message_type == "input_error":
-            error = data.get("error", {})
-            error_message = error.get("message", "Input error")
-            logger.error(f"❌ ElevenLabs input error: {error_message}")
+            # input_error는 에러 메시지 형식이 다를 수 있음
+            error_message = data.get("error")
+            if isinstance(error_message, str):
+                logger.error(f"❌ ElevenLabs input error: {error_message}")
+            else:
+                error = data.get("error", {})
+                error_message = error.get("message", "Input error") if isinstance(error, dict) else str(error)
+                logger.error(f"❌ ElevenLabs input error: {error_message}")
             logger.error(f"❌ Full error data: {data}")
+            # input_error는 연결을 끊지 않음 (재시도 가능)
         
         else:
             # 알 수 없는 메시지 타입 또는 type 필드가 없는 경우
@@ -312,21 +319,25 @@ class ElevenLabsSTTService(FrameProcessor):
             logger.warning("⚠️ Cannot send audio: not connected")
             return
         
-        # 세션 시작 확인 (없어도 오디오 전송 시도)
+        # 세션이 시작되지 않았으면 오디오 전송하지 않음
+        # 문서에 따르면 session_started 이벤트를 받은 후에만 오디오를 보내야 함
         if not self.session_started:
-            logger.debug("⚠️ Session not started yet, but sending audio anyway...")
-            # 세션이 시작되지 않았어도 오디오 전송 시도 (일부 API는 오디오를 보내면 세션이 시작됨)
+            logger.debug("⚠️ Cannot send audio: session not started yet (waiting for session_started event)")
+            return
         
         try:
             # PCM 오디오를 base64로 인코딩
             audio_base64 = base64.b64encode(audio_data).decode('utf-8')
             
-            # 오디오 청크 전송 (SDK와 동일한 형식)
-            # 타입 필드 없이 audio_base_64만 전송
+            # 오디오 청크 전송 (문서와 SDK에 따르면 audio_base_64만 전송)
+            # 참고: https://elevenlabs.io/docs/cookbooks/speech-to-text/streaming
+            # 문서 예제: connection.send({ audioBase64: audioBase64, sampleRate: 16000 })
+            # 하지만 Python SDK를 보면 audio_base_64만 보내는 것 같음
             message = {
                 "audio_base_64": audio_base64,
             }
             
+            logger.debug(f"📤 Sending audio chunk: {len(audio_base64)} base64 chars")
             await self.websocket.send(json.dumps(message))
             
             # 통계 업데이트
