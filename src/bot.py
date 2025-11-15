@@ -507,29 +507,49 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
                     # 성공 응답 처리
                     try:
                         data = await response.json()
-                        logger.info(f"📝 Token response data: {data}")
+                        logger.info(f"📝 Token response data keys: {list(data.keys())}")
+                        logger.debug(f"📝 Full response: {data}")
+                        
                         token = data.get("token")
                         
-                        # 응답 구조 확인
+                        # 응답 구조 확인 (다양한 필드명 시도)
                         if not token:
-                            # 다른 필드명 확인
-                            token = data.get("single_use_token") or data.get("access_token")
-                            if token:
-                                logger.info(f"✅ Found token in alternative field")
+                            # 다른 가능한 필드명들
+                            possible_fields = ["single_use_token", "access_token", "realtime_token", "scribe_token"]
+                            for field in possible_fields:
+                                if field in data:
+                                    token = data[field]
+                                    logger.info(f"✅ Found token in field: {field}")
+                                    break
+                        
+                        if not token:
+                            logger.error(f"❌ Token not found in response")
+                            logger.error(f"❌ Available fields: {list(data.keys())}")
+                            logger.error(f"❌ Full response: {data}")
+                            raise ValueError("Token not received from ElevenLabs - check response structure")
+                        
+                        # 토큰 검증
+                        if not isinstance(token, str) or len(token) < 10:
+                            logger.error(f"❌ Invalid token format")
+                            logger.error(f"❌ Token type: {type(token)}")
+                            logger.error(f"❌ Token length: {len(token) if token else 0}")
+                            raise ValueError(f"Invalid token format: {token}")
+                        
+                        logger.info(f"✅ ElevenLabs token generated successfully")
+                        logger.info(f"📝 Token length: {len(token)}")
+                        logger.info(f"📝 Token prefix: {token[:15]}...")
+                        logger.info(f"📝 Token suffix: ...{token[-10:]}")
+                        
+                    except ValueError:
+                        # 이미 로깅됨
+                        raise
                     except Exception as json_error:
                         error_text = await response.text()
                         logger.error(f"❌ Failed to parse JSON response: {json_error}")
+                        logger.error(f"❌ Response status: {response.status}")
+                        logger.error(f"❌ Response headers: {dict(response.headers)}")
                         logger.error(f"❌ Response text: {error_text}")
                         raise ValueError(f"Failed to parse token response: {error_text}")
-                    
-                    if not token:
-                        logger.error(f"❌ Token not found in response: {data}")
-                        raise ValueError("Token not received from ElevenLabs")
-                    
-                    logger.info(f"✅ ElevenLabs token generated successfully")
-                    logger.info(f"📝 Token length: {len(token)}")
-                    logger.info(f"📝 Token prefix: {token[:10]}...")
-                    logger.info(f"📝 Token format check: alphanumeric={token.replace('-', '').replace('_', '').isalnum()}")
                     
         except aiohttp.ClientError as e:
             logger.error(f"❌ Network error generating ElevenLabs token: {e}")

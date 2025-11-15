@@ -60,36 +60,36 @@ class ElevenLabsSTTService(FrameProcessor):
             
             # WebSocket URL 구성
             # ElevenLabs 문서에 따르면: wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket?token={token}
-            # 토큰은 URL 인코딩 없이 직접 사용해야 할 수 있음
+            # 참고: https://elevenlabs.io/docs/cookbooks/speech-to-text/streaming
             base_url = "wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket"
             
-            # 쿼리 파라미터 구성 (토큰은 인코딩하지 않고 직접 사용)
-            # 언어 설정은 연결 후 메시지로 전송하는 것이 더 안전할 수 있음
-            url = f"{base_url}?token={self.token}"
+            # 쿼리 파라미터 구성
+            # ElevenLabs 문서에 따르면 토큰을 쿼리 파라미터로 전달
+            # 참고: 토큰에 특수 문자가 있을 수 있으므로 URL 인코딩 사용
+            from urllib.parse import quote_plus
             
+            # 토큰과 언어를 쿼리 파라미터로 구성
+            url = f"{base_url}?token={quote_plus(self.token)}"
             if self.language:
                 url += f"&language={self.language}"
             
-            logger.debug(f"📡 WebSocket URL: {base_url}?token=***&language={self.language if self.language else 'auto'}")
-            logger.debug(f"📡 Full URL (without token): {base_url}?token=<TOKEN>&language={self.language if self.language else 'auto'}")
+            logger.info(f"📡 WebSocket URL: {base_url}?token=***&language={self.language if self.language else 'none'}")
+            logger.debug(f"📡 Token format: {self.token[:30]}... (length: {len(self.token)})")
+            logger.debug(f"📡 Token contains special chars: {not self.token.replace('-', '').replace('_', '').isalnum()}")
             
             # WebSocket 연결 (추가 헤더 없이, 타임아웃 설정)
             # ElevenLabs는 토큰을 쿼리 파라미터로만 받습니다
-            try:
-                self.websocket = await websockets.connect(
-                    url,
-                    ping_interval=None,  # ping 비활성화
-                    ping_timeout=None,
-                    close_timeout=10,
-                    extra_headers={},  # 빈 헤더 명시
-                )
-            except websockets.exceptions.InvalidStatusCode as e:
-                # 더 자세한 에러 정보 로깅
-                logger.error(f"❌ WebSocket connection failed with status {e.status_code}")
-                logger.error(f"❌ URL used: {base_url}?token=<REDACTED>&language={self.language if self.language else 'none'}")
-                logger.error(f"❌ Token length: {len(self.token)}")
-                logger.error(f"❌ Token is valid format: {self.token.isalnum() or '-' in self.token or '_' in self.token}")
-                raise
+            logger.info(f"🔗 Attempting WebSocket connection to ElevenLabs...")
+            
+            # WebSocket 연결 시도
+            self.websocket = await websockets.connect(
+                url,
+                ping_interval=None,  # ping 비활성화
+                ping_timeout=None,
+                close_timeout=10,
+            )
+            
+            logger.info(f"✅ WebSocket connection established!")
             
             self.is_connected = True
             self.reconnect_attempts = 0
@@ -102,25 +102,47 @@ class ElevenLabsSTTService(FrameProcessor):
             
         except websockets.exceptions.InvalidStatusCode as e:
             logger.error(f"❌ ElevenLabs STT connection error: HTTP {e.status_code}")
+            
+            # HTTP 응답 본문 읽기 시도 (있을 경우)
+            try:
+                if hasattr(e, 'response') and e.response:
+                    response_body = await e.response.text()
+                    logger.error(f"❌ Response body: {response_body}")
+            except:
+                pass
+            
             if e.status_code == 403:
                 logger.error(f"💡 HTTP 403: Authentication failed")
                 logger.error(f"💡 Possible causes:")
-                logger.error(f"💡   1. Token is invalid or expired")
-                logger.error(f"💡   2. API key is incorrect")
-                logger.error(f"💡   3. Token generation failed")
-                logger.error(f"💡   4. WebSocket URL format is incorrect")
-                logger.error(f"💡 Check if ELEVENLABS_API_KEY is correct in .env file")
-                logger.error(f"💡 Token length: {len(self.token) if self.token else 0}")
+                logger.error(f"💡   1. Token is invalid or expired (token length: {len(self.token) if self.token else 0})")
+                logger.error(f"💡   2. API key does not have access to Scribe Realtime v2")
+                logger.error(f"💡   3. Scribe Realtime v2 requires a paid plan")
+                logger.error(f"💡   4. WebSocket URL format may be incorrect")
+                logger.error(f"💡   5. Token generation may have failed silently")
+                logger.error(f"💡 Solutions:")
+                logger.error(f"💡   - Check if ELEVENLABS_API_KEY is correct in .env file")
+                logger.error(f"💡   - Verify your ElevenLabs account has access to Scribe Realtime v2")
+                logger.error(f"💡   - Check if your plan includes Scribe Realtime v2")
+                logger.error(f"💡   - Try generating a new token")
+                logger.error(f"💡 Token format check: {self.token[:20] if self.token else 'None'}...")
             elif e.status_code == 401:
                 logger.error(f"💡 HTTP 401: Unauthorized")
                 logger.error(f"💡 Token is invalid or expired")
+                logger.error(f"💡 Check if token was generated correctly")
+            elif e.status_code == 404:
+                logger.error(f"💡 HTTP 404: WebSocket endpoint not found")
+                logger.error(f"💡 Check if WebSocket URL is correct")
+                logger.error(f"💡 URL: {base_url}")
             else:
                 logger.error(f"💡 HTTP {e.status_code}: Unexpected error")
+                logger.error(f"💡 Check ElevenLabs API status and documentation")
+            
             self.is_connected = False
             raise
         except Exception as e:
             logger.error(f"❌ ElevenLabs STT connection error: {e}")
             logger.error(f"💡 Error type: {type(e).__name__}")
+            logger.error(f"💡 Error details: {str(e)}")
             logger.error(f"💡 Token length: {len(self.token) if self.token else 0}")
             logger.error(f"💡 Check if ELEVENLABS_API_KEY is correct in .env file")
             self.is_connected = False
