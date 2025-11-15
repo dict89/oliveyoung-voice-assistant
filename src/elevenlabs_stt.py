@@ -60,28 +60,36 @@ class ElevenLabsSTTService(FrameProcessor):
             
             # WebSocket URL 구성
             # ElevenLabs 문서에 따르면: wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket?token={token}
-            # 실제 API는 URL 인코딩이 필요할 수 있음
-            from urllib.parse import quote
-            
+            # 토큰은 URL 인코딩 없이 직접 사용해야 할 수 있음
             base_url = "wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket"
             
-            # 쿼리 파라미터 구성 (URL 인코딩)
-            query_params = [f"token={quote(self.token)}"]
-            if self.language:
-                query_params.append(f"language={self.language}")
+            # 쿼리 파라미터 구성 (토큰은 인코딩하지 않고 직접 사용)
+            # 언어 설정은 연결 후 메시지로 전송하는 것이 더 안전할 수 있음
+            url = f"{base_url}?token={self.token}"
             
-            url = f"{base_url}?{'&'.join(query_params)}"
+            if self.language:
+                url += f"&language={self.language}"
             
             logger.debug(f"📡 WebSocket URL: {base_url}?token=***&language={self.language if self.language else 'auto'}")
+            logger.debug(f"📡 Full URL (without token): {base_url}?token=<TOKEN>&language={self.language if self.language else 'auto'}")
             
-            # WebSocket 연결 (타임아웃 설정)
-            # 추가 헤더 없이 토큰을 쿼리 파라미터로 전달
-            self.websocket = await websockets.connect(
-                url,
-                ping_interval=None,  # ping 비활성화
-                ping_timeout=None,
-                close_timeout=10,
-            )
+            # WebSocket 연결 (추가 헤더 없이, 타임아웃 설정)
+            # ElevenLabs는 토큰을 쿼리 파라미터로만 받습니다
+            try:
+                self.websocket = await websockets.connect(
+                    url,
+                    ping_interval=None,  # ping 비활성화
+                    ping_timeout=None,
+                    close_timeout=10,
+                    extra_headers={},  # 빈 헤더 명시
+                )
+            except websockets.exceptions.InvalidStatusCode as e:
+                # 더 자세한 에러 정보 로깅
+                logger.error(f"❌ WebSocket connection failed with status {e.status_code}")
+                logger.error(f"❌ URL used: {base_url}?token=<REDACTED>&language={self.language if self.language else 'none'}")
+                logger.error(f"❌ Token length: {len(self.token)}")
+                logger.error(f"❌ Token is valid format: {self.token.isalnum() or '-' in self.token or '_' in self.token}")
+                raise
             
             self.is_connected = True
             self.reconnect_attempts = 0

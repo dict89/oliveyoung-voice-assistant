@@ -329,6 +329,7 @@ class OliveYoungVoiceBot:
         if not self.cartesia_api_key:
             raise ValueError("CARTESIA_API_KEY가 설정되지 않았습니다.")
         
+        # ElevenLabs API 키 (필수)
         self.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
         if not self.elevenlabs_api_key:
             raise ValueError("ELEVENLABS_API_KEY가 설정되지 않았습니다.")
@@ -452,7 +453,7 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
             DailyParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
-                transcription_enabled=False,  # OpenAI Whisper만 사용 (Daily transcription 끔)
+                transcription_enabled=False,  # OpenAI Whisper 사용 (Daily transcription 끔)
                 vad_enabled=True,
                 vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2))
             ),
@@ -494,6 +495,7 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
                         elif response.status == 403:
                             logger.error(f"💡 HTTP 403: Forbidden - API key may not have permission")
                             logger.error(f"💡 Check if your ElevenLabs account has access to Scribe Realtime v2")
+                            logger.error(f"💡 Scribe Realtime v2 may require a paid plan")
                         elif response.status == 429:
                             logger.error(f"💡 HTTP 429: Rate limit exceeded")
                             logger.error(f"💡 Wait a moment and try again")
@@ -505,7 +507,15 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
                     # 성공 응답 처리
                     try:
                         data = await response.json()
+                        logger.info(f"📝 Token response data: {data}")
                         token = data.get("token")
+                        
+                        # 응답 구조 확인
+                        if not token:
+                            # 다른 필드명 확인
+                            token = data.get("single_use_token") or data.get("access_token")
+                            if token:
+                                logger.info(f"✅ Found token in alternative field")
                     except Exception as json_error:
                         error_text = await response.text()
                         logger.error(f"❌ Failed to parse JSON response: {json_error}")
@@ -519,6 +529,7 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
                     logger.info(f"✅ ElevenLabs token generated successfully")
                     logger.info(f"📝 Token length: {len(token)}")
                     logger.info(f"📝 Token prefix: {token[:10]}...")
+                    logger.info(f"📝 Token format check: alphanumeric={token.replace('-', '').replace('_', '').isalnum()}")
                     
         except aiohttp.ClientError as e:
             logger.error(f"❌ Network error generating ElevenLabs token: {e}")
