@@ -205,10 +205,13 @@ class ElevenLabsSTTService(FrameProcessor):
     
     async def _handle_message(self, data: dict):
         """ElevenLabs 메시지 처리"""
+        # 전체 메시지 로깅 (디버깅용)
+        logger.info(f"📨 Received message: {json.dumps(data, indent=2)}")
+        
         message_type = data.get("type")
         
         # 모든 메시지 타입 로깅 (디버깅용)
-        logger.debug(f"📨 Received message type: {message_type}")
+        logger.info(f"📨 Message type: {message_type}")
         
         if message_type == "session_started":
             logger.info("✅ ElevenLabs session started")
@@ -287,9 +290,18 @@ class ElevenLabsSTTService(FrameProcessor):
             logger.error(f"❌ Full error data: {data}")
         
         else:
-            # 알 수 없는 메시지 타입
-            logger.warning(f"⚠️ Unknown message type: {message_type}")
-            logger.debug(f"⚠️ Full message data: {data}")
+            # 알 수 없는 메시지 타입 또는 type 필드가 없는 경우
+            if message_type is None:
+                # type 필드가 없는 경우 - 전체 메시지를 확인
+                logger.info(f"ℹ️ Message without 'type' field: {json.dumps(data, indent=2)}")
+                # 세션 시작일 수 있는 다른 필드 확인
+                if "session" in data or "session_id" in data:
+                    logger.info("✅ Session info found in message (treating as session started)")
+                    self.session_started = True
+            else:
+                # 알 수 없는 메시지 타입
+                logger.warning(f"⚠️ Unknown message type: {message_type}")
+                logger.info(f"⚠️ Full message data: {json.dumps(data, indent=2)}")
     
     async def _send_audio(self, audio_data: bytes):
         """오디오 데이터를 ElevenLabs로 전송
@@ -300,10 +312,10 @@ class ElevenLabsSTTService(FrameProcessor):
             logger.warning("⚠️ Cannot send audio: not connected")
             return
         
+        # 세션 시작 확인 (없어도 오디오 전송 시도)
         if not self.session_started:
-            # 세션이 시작되지 않았으면 오디오 전송하지 않음
-            logger.debug("⚠️ Cannot send audio: session not started yet")
-            return
+            logger.debug("⚠️ Session not started yet, but sending audio anyway...")
+            # 세션이 시작되지 않았어도 오디오 전송 시도 (일부 API는 오디오를 보내면 세션이 시작됨)
         
         try:
             # PCM 오디오를 base64로 인코딩
@@ -364,15 +376,16 @@ class ElevenLabsSTTService(FrameProcessor):
                 logger.info("🔌 Not connected, attempting to connect...")
                 try:
                     await self._connect()
-                    # 세션 시작을 기다림 (최대 5초)
-                    max_wait = 50  # 0.1초 * 50 = 5초
+                    # 세션 시작을 짧게 기다림 (최대 1초)
+                    # 일부 API는 오디오를 보내면 세션이 시작되므로 오래 기다릴 필요 없음
+                    max_wait = 10  # 0.1초 * 10 = 1초
                     waited = 0
                     while not self.session_started and waited < max_wait:
                         await asyncio.sleep(0.1)
                         waited += 1
                     
                     if not self.session_started:
-                        logger.warning("⚠️ Session not started after 5 seconds, continuing anyway...")
+                        logger.info("ℹ️ Session not started yet, but will try sending audio (session may start after first audio)")
                     else:
                         logger.info("✅ Session started, ready to receive audio")
                 except Exception as e:
