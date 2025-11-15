@@ -29,9 +29,11 @@ from pipecat.transports.daily.transport import DailyParams, DailyTransport
 
 from loguru import logger
 from dotenv import load_dotenv
+import aiohttp
 
 from .store_service import StoreService
 from .websocket_manager import broadcast_message
+from .elevenlabs_stt import ElevenLabsSTTService
 
 # 환경 변수 로드
 load_dotenv()
@@ -327,6 +329,10 @@ class OliveYoungVoiceBot:
         if not self.cartesia_api_key:
             raise ValueError("CARTESIA_API_KEY가 설정되지 않았습니다.")
         
+        self.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+        if not self.elevenlabs_api_key:
+            raise ValueError("ELEVENLABS_API_KEY가 설정되지 않았습니다.")
+        
         # 시스템 프롬프트 생성
         self.system_prompt = self._create_system_prompt()
     
@@ -452,11 +458,38 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
             ),
         )
         
-        # STT 서비스 - OpenAI Whisper (한국어 인식 최고!)
-        stt = OpenAISTTService(
-            api_key=self.openai_api_key,
-            model="whisper-1",
-            language=language  # ko/en - Whisper는 한국어 인식이 매우 정확
+        # STT 서비스 - ElevenLabs Scribe Realtime v2 (초저지연!)
+        # Single-use token 생성
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.elevenlabs.io/v1/single-use-token/realtime_scribe",
+                    headers={
+                        "xi-api-key": self.elevenlabs_api_key,
+                    },
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"❌ ElevenLabs token generation failed: {error_text}")
+                        raise ValueError(f"Token generation failed: {error_text}")
+                    
+                    data = await response.json()
+                    token = data.get("token")
+                    
+                    if not token:
+                        raise ValueError("Token not received from ElevenLabs")
+                    
+                    logger.info("✅ ElevenLabs token generated successfully")
+        except Exception as e:
+            logger.error(f"❌ Error generating ElevenLabs token: {e}")
+            raise
+        
+        # ElevenLabs STT 서비스 초기화
+        stt = ElevenLabsSTTService(
+            token=token,
+            model_id="scribe_v2_realtime",
+            sample_rate=16000,
+            language=language  # ko/en, None이면 자동 감지
         )
         
         # TTS 서비스 (텍스트 → 음성) - Cartesia
@@ -526,11 +559,11 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
         # LLM 응답 로거 (태그 파싱 및 이미지 표시)
         response_logger = ResponseLogger()
         
-        # 파이프라인 구성 (OpenAI Whisper STT 사용)
+        # 파이프라인 구성 (ElevenLabs Scribe Realtime v2 STT 사용)
         pipeline = Pipeline(
             [
                 transport.input(),           # 오디오 입력
-                stt,                         # OpenAI Whisper (한국어/영어 자동 감지)
+                stt,                         # ElevenLabs Scribe Realtime v2 (초저지연!)
                 intent_filter,               # 의도 판단 LLM (필터링) - NO는 여기서 차단
                 transcript_logger,           # 사용자 입력 로깅 (Intent:YES만)
                 user_response_aggregator,    # 사용자 메시지 집계
@@ -556,7 +589,7 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
         @transport.event_handler("on_first_participant_joined")
         async def on_first_participant_joined(transport, participant):
             logger.info(f"✅ First participant joined: {participant['id']}")
-            # OpenAI Whisper 사용하므로 Daily transcription 불필요
+            # ElevenLabs Scribe Realtime v2 사용
             # 초기 인사말
             logger.info("Sending initial greeting")
             messages.append({

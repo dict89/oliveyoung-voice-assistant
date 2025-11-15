@@ -1254,6 +1254,45 @@ async def start_bot(request: BotStartRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/elevenlabs-token")
+async def get_elevenlabs_token():
+    """
+    ElevenLabs Scribe Realtime v2용 single-use token을 생성합니다.
+    """
+    try:
+        elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+        if not elevenlabs_api_key:
+            raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY가 설정되지 않았습니다.")
+        
+        # ElevenLabs API로 토큰 생성
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.elevenlabs.io/v1/single-use-token/realtime_scribe",
+                headers={
+                    "xi-api-key": elevenlabs_api_key,
+                },
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"❌ ElevenLabs token generation failed: {error_text}")
+                    raise HTTPException(status_code=500, detail=f"Token generation failed: {error_text}")
+                
+                data = await response.json()
+                token = data.get("token")
+                
+                if not token:
+                    raise HTTPException(status_code=500, detail="Token not received from ElevenLabs")
+                
+                logger.info("✅ ElevenLabs token generated successfully")
+                return JSONResponse(content={"token": token})
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error generating ElevenLabs token: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/test-images")
 async def test_images():
     """이미지 팝업 테스트 엔드포인트"""

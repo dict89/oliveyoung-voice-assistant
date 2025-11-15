@@ -11,14 +11,15 @@
 - 🗺️ **교통 안내**: 가까운 지하철역 및 주변 랜드마크 정보
 - 🔥 **제품 추천**: 인기 상품 및 브랜드 정보 제공
 - 🌐 **웹 인터페이스**: 브라우저에서 바로 사용 가능
-- 🕷️ **웹 크롤링**: 올리브영 웹사이트에서 실시간 상품 정보 수집
+- 🗺️ **매장 내 위치 지도**: 추천 제품 클릭 시 매장 내 위치 확인
 
 ## 🛠️ 기술 스택
 
 - **Pipecat**: 실시간 음성 대화 프레임워크
-- **Cartesia**: STT (Speech-to-Text) 및 TTS (Text-to-Speech)
+- **ElevenLabs Scribe Realtime v2**: STT (Speech-to-Text) - 초저지연 음성 인식
+- **Cartesia**: TTS (Text-to-Speech)
 - **OpenAI GPT-4**: LLM (Large Language Model)
-- **WebSocket**: 실시간 양방향 통신
+- **Daily.co**: WebRTC 오디오 통신
 - **FastAPI**: 백엔드 API 서버
 - **Python 3.10+**
 
@@ -27,6 +28,8 @@
 1. **Python 3.10 이상**
 2. **OpenAI API Key**: [OpenAI](https://platform.openai.com/api-keys)에서 발급
 3. **Cartesia API Key**: [Cartesia](https://cartesia.ai/)에서 발급
+4. **ElevenLabs API Key**: [ElevenLabs](https://elevenlabs.io/app/settings/api-keys)에서 발급
+5. **Daily.co API Key**: [Daily.co](https://dashboard.daily.co/)에서 발급
 
 ## 🚀 설치 및 실행
 
@@ -60,6 +63,8 @@ cp .env.example .env
 ```
 OPENAI_API_KEY=your_openai_api_key_here
 CARTESIA_API_KEY=your_cartesia_api_key_here
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+DAILY_API_KEY=your_daily_api_key_here
 HOST=0.0.0.0
 PORT=8000
 LOG_LEVEL=INFO

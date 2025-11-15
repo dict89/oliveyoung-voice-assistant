@@ -15,6 +15,18 @@
 3. API Keys 페이지에서 키 생성
 4. API Key 복사
 
+### ElevenLabs API Key
+1. [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) 접속
+2. 회원가입 및 로그인
+3. API Keys 페이지에서 키 생성
+4. API Key 복사 (Scribe Realtime v2 사용)
+
+### Daily.co API Key
+1. [Daily.co Dashboard](https://dashboard.daily.co/) 접속
+2. 회원가입 및 로그인
+3. API Keys 페이지에서 키 생성
+4. API Key 복사
+
 ## 2️⃣ 프로젝트 설정
 
 ### UV 설치 (Python 패키지 매니저)
@@ -35,6 +47,8 @@ nano .env
 ```
 OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
 CARTESIA_API_KEY=xxxxxxxxxxxxx
+ELEVENLABS_API_KEY=xxxxxxxxxxxxx
+DAILY_API_KEY=xxxxxxxxxxxxx
 HOST=0.0.0.0
 PORT=8000
 ```
