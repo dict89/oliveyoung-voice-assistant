@@ -56,19 +56,33 @@ uv sync
 `.env` 파일을 생성하고 API 키를 입력하세요:
 
 ```bash
+# .env.example 파일을 복사해서 .env 파일 생성
 cp .env.example .env
+
+# .env 파일 편집 (API 키 입력)
+nano .env
+# 또는
+code .env
 ```
 
-`.env` 파일 내용:
+**필수 API 키:**
+1. **OPENAI_API_KEY**: [OpenAI 플랫폼](https://platform.openai.com/api-keys)에서 발급
+2. **CARTESIA_API_KEY**: [Cartesia](https://cartesia.ai/)에서 발급
+3. **ELEVENLABS_API_KEY**: [ElevenLabs](https://elevenlabs.io/app/settings/api-keys)에서 발급
+4. **DAILY_API_KEY**: [Daily.co Dashboard](https://dashboard.daily.co/)에서 발급
+
+`.env` 파일 예시:
 ```
-OPENAI_API_KEY=your_openai_api_key_here
-CARTESIA_API_KEY=your_cartesia_api_key_here
-ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
-DAILY_API_KEY=your_daily_api_key_here
+OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
+CARTESIA_API_KEY=xxxxxxxxxxxxx
+ELEVENLABS_API_KEY=xxxxxxxxxxxxx
+DAILY_API_KEY=xxxxxxxxxxxxx
 HOST=0.0.0.0
 PORT=8000
 LOG_LEVEL=INFO
 ```
+
+**주의**: `.env` 파일은 Git에 커밋되지 않습니다 (`.gitignore`에 포함됨). 각자 로컬에서 설정해야 합니다.
 
 ### 5. 서버 실행
 

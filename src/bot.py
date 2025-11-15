@@ -459,32 +459,85 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
         )
         
         # STT 서비스 - ElevenLabs Scribe Realtime v2 (초저지연!)
+        # API 키 검증
+        if not self.elevenlabs_api_key:
+            raise ValueError("ELEVENLABS_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
+        
+        if len(self.elevenlabs_api_key) < 20:
+            logger.warning(f"⚠️ API key seems too short (length: {len(self.elevenlabs_api_key)})")
+        
         # Single-use token 생성
+        logger.info("🔑 Generating ElevenLabs token...")
+        logger.info(f"📝 API key length: {len(self.elevenlabs_api_key)}")
+        logger.info(f"📝 API key prefix: {self.elevenlabs_api_key[:10]}...")
+        
+        token = None
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     "https://api.elevenlabs.io/v1/single-use-token/realtime_scribe",
                     headers={
                         "xi-api-key": self.elevenlabs_api_key,
+                        "Content-Type": "application/json",
                     },
                 ) as response:
+                    logger.info(f"📡 Token generation response status: {response.status}")
+                    
                     if response.status != 200:
                         error_text = await response.text()
-                        logger.error(f"❌ ElevenLabs token generation failed: {error_text}")
-                        raise ValueError(f"Token generation failed: {error_text}")
+                        logger.error(f"❌ ElevenLabs token generation failed (status {response.status})")
+                        logger.error(f"❌ Error response: {error_text}")
+                        
+                        if response.status == 401:
+                            logger.error(f"💡 HTTP 401: Unauthorized - API key is invalid")
+                            logger.error(f"💡 Check if ELEVENLABS_API_KEY is correct in .env file")
+                        elif response.status == 403:
+                            logger.error(f"💡 HTTP 403: Forbidden - API key may not have permission")
+                            logger.error(f"💡 Check if your ElevenLabs account has access to Scribe Realtime v2")
+                        elif response.status == 429:
+                            logger.error(f"💡 HTTP 429: Rate limit exceeded")
+                            logger.error(f"💡 Wait a moment and try again")
+                        else:
+                            logger.error(f"💡 Unexpected error: {response.status}")
+                        
+                        raise ValueError(f"Token generation failed: HTTP {response.status} - {error_text}")
                     
-                    data = await response.json()
-                    token = data.get("token")
+                    # 성공 응답 처리
+                    try:
+                        data = await response.json()
+                        token = data.get("token")
+                    except Exception as json_error:
+                        error_text = await response.text()
+                        logger.error(f"❌ Failed to parse JSON response: {json_error}")
+                        logger.error(f"❌ Response text: {error_text}")
+                        raise ValueError(f"Failed to parse token response: {error_text}")
                     
                     if not token:
+                        logger.error(f"❌ Token not found in response: {data}")
                         raise ValueError("Token not received from ElevenLabs")
                     
-                    logger.info("✅ ElevenLabs token generated successfully")
+                    logger.info(f"✅ ElevenLabs token generated successfully")
+                    logger.info(f"📝 Token length: {len(token)}")
+                    logger.info(f"📝 Token prefix: {token[:10]}...")
+                    
+        except aiohttp.ClientError as e:
+            logger.error(f"❌ Network error generating ElevenLabs token: {e}")
+            logger.error(f"💡 Check your internet connection")
+            raise
+        except ValueError:
+            # 이미 로깅됨
+            raise
         except Exception as e:
-            logger.error(f"❌ Error generating ElevenLabs token: {e}")
+            logger.error(f"❌ Unexpected error generating ElevenLabs token: {e}")
+            logger.error(f"💡 Error type: {type(e).__name__}")
+            logger.error(f"💡 Check if ELEVENLABS_API_KEY is set correctly in .env file")
             raise
         
+        if not token:
+            raise ValueError("Failed to generate ElevenLabs token - token is None")
+        
         # ElevenLabs STT 서비스 초기화
+        logger.info(f"🎙️ Initializing ElevenLabs STT service (language: {language})")
         stt = ElevenLabsSTTService(
             token=token,
             model_id="scribe_v2_realtime",

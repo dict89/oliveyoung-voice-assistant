@@ -36,14 +36,22 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### 환경 변수 설정
 ```bash
-# .env 파일 생성
+# .env.example 파일을 복사해서 .env 파일 생성
 cp .env.example .env
 
 # 편집기로 .env 파일을 열어 API 키 입력
 nano .env
+# 또는
+code .env
 ```
 
-`.env` 파일 내용:
+**API 키 발급 링크:**
+- **OpenAI**: https://platform.openai.com/api-keys
+- **Cartesia**: https://cartesia.ai/
+- **ElevenLabs**: https://elevenlabs.io/app/settings/api-keys
+- **Daily.co**: https://dashboard.daily.co/
+
+`.env` 파일 내용 (실제 API 키로 변경):
 ```
 OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
 CARTESIA_API_KEY=xxxxxxxxxxxxx
@@ -51,7 +59,13 @@ ELEVENLABS_API_KEY=xxxxxxxxxxxxx
 DAILY_API_KEY=xxxxxxxxxxxxx
 HOST=0.0.0.0
 PORT=8000
+LOG_LEVEL=INFO
 ```
+
+**⚠️ 중요**: 
+- `.env` 파일은 Git에 커밋되지 않습니다
+- 각자 로컬에서 API 키를 설정해야 합니다
+- API 키는 절대 공개하지 마세요!
 
 ## 3️⃣ 실행
 

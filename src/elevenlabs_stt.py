@@ -49,19 +49,39 @@ class ElevenLabsSTTService(FrameProcessor):
     async def _connect(self):
         """ElevenLabs WebSocket에 연결"""
         try:
-            # WebSocket URL (token을 쿼리 파라미터로 전달)
-            url = f"wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket?token={self.token}"
+            # 토큰 검증
+            if not self.token or len(self.token) < 10:
+                raise ValueError(f"Invalid token: token length is {len(self.token) if self.token else 0}")
             
-            # 추가 쿼리 파라미터
-            query_params = []
+            logger.info(f"🔌 Connecting to ElevenLabs WebSocket...")
+            logger.info(f"📝 Token length: {len(self.token)}")
+            logger.info(f"📝 Token prefix: {self.token[:10]}...")
+            logger.info(f"📝 Language: {self.language or 'auto'}")
+            
+            # WebSocket URL 구성
+            # ElevenLabs 문서에 따르면: wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket?token={token}
+            # 실제 API는 URL 인코딩이 필요할 수 있음
+            from urllib.parse import quote
+            
+            base_url = "wss://api.elevenlabs.io/v1/speech-to-text/realtime/websocket"
+            
+            # 쿼리 파라미터 구성 (URL 인코딩)
+            query_params = [f"token={quote(self.token)}"]
             if self.language:
                 query_params.append(f"language={self.language}")
             
-            if query_params:
-                url += "&" + "&".join(query_params)
+            url = f"{base_url}?{'&'.join(query_params)}"
             
-            # WebSocket 연결
-            self.websocket = await websockets.connect(url)
+            logger.debug(f"📡 WebSocket URL: {base_url}?token=***&language={self.language if self.language else 'auto'}")
+            
+            # WebSocket 연결 (타임아웃 설정)
+            # 추가 헤더 없이 토큰을 쿼리 파라미터로 전달
+            self.websocket = await websockets.connect(
+                url,
+                ping_interval=None,  # ping 비활성화
+                ping_timeout=None,
+                close_timeout=10,
+            )
             
             self.is_connected = True
             self.reconnect_attempts = 0
@@ -70,10 +90,31 @@ class ElevenLabsSTTService(FrameProcessor):
             # 메시지 수신 태스크 시작
             self.connection_task = asyncio.create_task(self._receive_messages())
             
-            logger.info(f"✅ ElevenLabs STT connected (model: {self.model_id}, sample_rate: {self.sample_rate})")
+            logger.info(f"✅ ElevenLabs STT connected (model: {self.model_id}, sample_rate: {self.sample_rate}, language: {self.language or 'auto'})")
             
+        except websockets.exceptions.InvalidStatusCode as e:
+            logger.error(f"❌ ElevenLabs STT connection error: HTTP {e.status_code}")
+            if e.status_code == 403:
+                logger.error(f"💡 HTTP 403: Authentication failed")
+                logger.error(f"💡 Possible causes:")
+                logger.error(f"💡   1. Token is invalid or expired")
+                logger.error(f"💡   2. API key is incorrect")
+                logger.error(f"💡   3. Token generation failed")
+                logger.error(f"💡   4. WebSocket URL format is incorrect")
+                logger.error(f"💡 Check if ELEVENLABS_API_KEY is correct in .env file")
+                logger.error(f"💡 Token length: {len(self.token) if self.token else 0}")
+            elif e.status_code == 401:
+                logger.error(f"💡 HTTP 401: Unauthorized")
+                logger.error(f"💡 Token is invalid or expired")
+            else:
+                logger.error(f"💡 HTTP {e.status_code}: Unexpected error")
+            self.is_connected = False
+            raise
         except Exception as e:
             logger.error(f"❌ ElevenLabs STT connection error: {e}")
+            logger.error(f"💡 Error type: {type(e).__name__}")
+            logger.error(f"💡 Token length: {len(self.token) if self.token else 0}")
+            logger.error(f"💡 Check if ELEVENLABS_API_KEY is correct in .env file")
             self.is_connected = False
             raise
     
