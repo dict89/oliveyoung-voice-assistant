@@ -65,17 +65,21 @@ class ElevenLabsSTTService(FrameProcessor):
             
             # 쿼리 파라미터 구성
             # ElevenLabs 문서에 따르면 토큰을 쿼리 파라미터로 전달
-            # 참고: 토큰에 특수 문자가 있을 수 있으므로 URL 인코딩 사용
-            from urllib.parse import quote_plus
+            # 참고: 실제 API에서는 토큰을 URL 인코딩하지 않고 직접 사용할 수도 있음
+            # 두 가지 방식 모두 시도해볼 수 있음
             
-            # 토큰과 언어를 쿼리 파라미터로 구성
-            url = f"{base_url}?token={quote_plus(self.token)}"
+            # 방식 1: URL 인코딩 없이 직접 사용 (먼저 시도)
+            url = f"{base_url}?token={self.token}"
             if self.language:
                 url += f"&language={self.language}"
             
             logger.info(f"📡 WebSocket URL: {base_url}?token=***&language={self.language if self.language else 'none'}")
-            logger.debug(f"📡 Token format: {self.token[:30]}... (length: {len(self.token)})")
-            logger.debug(f"📡 Token contains special chars: {not self.token.replace('-', '').replace('_', '').isalnum()}")
+            logger.info(f"📡 Token (first 20 chars): {self.token[:20]}...")
+            logger.info(f"📡 Token (last 10 chars): ...{self.token[-10:]}")
+            logger.debug(f"📡 Full token: {self.token}")
+            logger.debug(f"📡 Token length: {len(self.token)}")
+            logger.debug(f"📡 Token type: {type(self.token)}")
+            logger.debug(f"📡 Token is string: {isinstance(self.token, str)}")
             
             # WebSocket 연결 (추가 헤더 없이, 타임아웃 설정)
             # ElevenLabs는 토큰을 쿼리 파라미터로만 받습니다
