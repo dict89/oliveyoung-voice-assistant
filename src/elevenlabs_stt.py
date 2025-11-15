@@ -10,7 +10,7 @@ from typing import Optional
 
 import websockets
 from loguru import logger
-from pipecat.frames.frames import AudioFrame, TranscriptionFrame, Frame
+from pipecat.frames.frames import AudioRawFrame, TranscriptionFrame, Frame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 
@@ -213,11 +213,11 @@ class ElevenLabsSTTService(FrameProcessor):
             logger.error(f"❌ Error committing transcript: {e}")
     
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        """프레임 처리 (AudioFrame을 받아서 TranscriptionFrame 생성)"""
+        """프레임 처리 (AudioRawFrame을 받아서 TranscriptionFrame 생성)"""
         await super().process_frame(frame, direction)
         
-        # AudioFrame 처리
-        if isinstance(frame, AudioFrame):
+        # AudioRawFrame 처리
+        if isinstance(frame, AudioRawFrame):
             if not self.is_connected:
                 # 연결되지 않은 경우 연결 시도
                 try:
@@ -229,12 +229,11 @@ class ElevenLabsSTTService(FrameProcessor):
                     return
             
             # 오디오 데이터 전송
+            # AudioRawFrame은 audio 속성이 bytes 형식 (PCM 16-bit little-endian)
             audio_data = frame.audio
             
-            # Daily.co는 16kHz PCM으로 오디오를 제공하는 것으로 가정
-            # 실제로는 frame.audio 형식에 따라 변환이 필요할 수 있음
+            # audio_data가 bytes인지 확인
             if audio_data is not None:
-                # audio_data 형식 변환 (bytes로 변환)
                 audio_bytes = None
                 
                 if isinstance(audio_data, bytes):
@@ -242,32 +241,11 @@ class ElevenLabsSTTService(FrameProcessor):
                 elif isinstance(audio_data, bytearray):
                     audio_bytes = bytes(audio_data)
                 else:
-                    # numpy array 등의 경우 bytes로 변환
-                    try:
-                        import numpy as np
-                        if isinstance(audio_data, np.ndarray):
-                            # numpy array를 int16으로 변환 후 bytes로 변환
-                            # Daily.co는 보통 float32 (-1.0 ~ 1.0) 또는 int16 형식
-                            if audio_data.dtype == np.float32:
-                                # float32를 int16으로 변환
-                                audio_int16 = (audio_data * 32767).astype(np.int16)
-                                audio_bytes = audio_int16.tobytes()
-                            elif audio_data.dtype == np.int16:
-                                audio_bytes = audio_data.tobytes()
-                            else:
-                                logger.warning(f"⚠️ Unsupported numpy dtype: {audio_data.dtype}")
-                                return
-                        else:
-                            logger.warning(f"⚠️ Unsupported audio format: {type(audio_data)}")
-                            return
-                    except ImportError:
-                        logger.warning("⚠️ numpy not available, cannot convert audio data")
-                        return
-                    except Exception as e:
-                        logger.error(f"❌ Error converting audio data: {e}")
-                        return
+                    # 예상치 못한 형식인 경우 로깅
+                    logger.warning(f"⚠️ Unexpected audio format: {type(audio_data)}")
+                    return
                 
-                # 오디오 데이터 전송
+                # 오디오 데이터 전송 (빈 데이터는 건너뜀)
                 if audio_bytes and len(audio_bytes) > 0:
                     await self._send_audio(audio_bytes)
         
