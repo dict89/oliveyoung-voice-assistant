@@ -9,6 +9,7 @@ https://elevenlabs.io/docs/cookbooks/speech-to-text/streaming
 import asyncio
 import base64
 import json
+import time
 from typing import Optional
 
 import websockets
@@ -259,9 +260,13 @@ class ElevenLabsSTTService(FrameProcessor):
                 self.last_committed_transcript = text.strip()
                 self.partial_transcript = ""
                 
-                # TranscriptionFrame 생성 및 전달
+                # TranscriptionFrame 생성 및 전달 (timestamp 필수)
                 logger.info(f"✅ Committed transcript: {text.strip()}")
-                frame = TranscriptionFrame(text=text.strip(), user_id="user")
+                frame = TranscriptionFrame(
+                    text=text.strip(),
+                    user_id="user",
+                    timestamp=time.time()
+                )
                 await self.push_frame(frame, FrameDirection.DOWNSTREAM)
         
         elif message_type == "committed_transcript_with_timestamps":
@@ -271,9 +276,21 @@ class ElevenLabsSTTService(FrameProcessor):
                 self.last_committed_transcript = text.strip()
                 self.partial_transcript = ""
                 
-                # TranscriptionFrame 생성 및 전달
+                # TranscriptionFrame 생성 및 전달 (timestamp 필수)
+                # ElevenLabs에서 제공하는 타임스탬프가 있으면 사용, 없으면 현재 시간
+                timestamp = time.time()
+                if "words" in data:
+                    # words 배열의 첫 번째 항목의 start_time 사용 가능
+                    words = data.get("words", [])
+                    if words and len(words) > 0 and "start" in words[0]:
+                        timestamp = words[0]["start"] / 1000.0  # 밀리초를 초로 변환
+                
                 logger.info(f"✅ Committed transcript (with timestamps): {text.strip()}")
-                frame = TranscriptionFrame(text=text.strip(), user_id="user")
+                frame = TranscriptionFrame(
+                    text=text.strip(),
+                    user_id="user",
+                    timestamp=timestamp
+                )
                 await self.push_frame(frame, FrameDirection.DOWNSTREAM)
         
         elif message_type == "error":
