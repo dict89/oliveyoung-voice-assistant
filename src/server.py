@@ -515,6 +515,39 @@ async def root():
                 </label>
             </div>
             
+            <!-- STT 프로바이더 선택 -->
+            <div style="margin: 20px 0; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 10px;">
+                <label style="font-size: 16px; margin-right: 10px; display: block; margin-bottom: 10px;">🎙️ 음성 인식 엔진 선택:</label>
+                <div style="display: flex; justify-content: center; gap: 20px;">
+                    <label style="cursor: pointer; padding: 10px 20px; border: 2px solid #667eea; border-radius: 8px; background: white; transition: all 0.3s;">
+                        <input type="radio" name="stt_provider" value="elevenlabs" checked style="margin-right: 8px;">
+                        <span style="font-weight: 500;">ElevenLabs Scribe</span>
+                        <div style="font-size: 12px; color: #666; margin-top: 5px;">초저지연 실시간</div>
+                    </label>
+                    <label style="cursor: pointer; padding: 10px 20px; border: 2px solid #e9ecef; border-radius: 8px; background: white; transition: all 0.3s;">
+                        <input type="radio" name="stt_provider" value="whisper" style="margin-right: 8px;">
+                        <span style="font-weight: 500;">OpenAI Whisper</span>
+                        <div style="font-size: 12px; color: #666; margin-top: 5px;">고정밀 전사</div>
+                    </label>
+                </div>
+            </div>
+            
+            <style>
+                input[type="radio"][name="stt_provider"]:checked + span {
+                    color: #667eea;
+                    font-weight: 600;
+                }
+                label:has(input[type="radio"][name="stt_provider"]:checked) {
+                    border-color: #667eea !important;
+                    background: #f0f4ff !important;
+                }
+                label:has(input[type="radio"][name="stt_provider"]):hover {
+                    border-color: #667eea;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+                }
+            </style>
+            
             <button id="startBtn" class="btn" onclick="startConversation()">
                 🎙️ 대화 시작하기
             </button>
@@ -1073,11 +1106,13 @@ async def root():
                     
                     showStatus('봇이 참여하는 중... 잠시만 기다려주세요.', 'info');
                     
-                    // 선택된 언어 가져오기
+                    // 선택된 언어 및 STT 프로바이더 가져오기
                     const selectedLanguage = document.querySelector('input[name="language"]:checked').value;
+                    const selectedSTTProvider = document.querySelector('input[name="stt_provider"]:checked').value;
                     console.log('Selected language:', selectedLanguage);
+                    console.log('Selected STT provider:', selectedSTTProvider);
                     
-                    // 사용자가 참여한 후 봇 시작 (token + language 전달)
+                    // 사용자가 참여한 후 봇 시작 (token + language + stt_provider 전달)
                     await fetch('/api/start-bot', {
                         method: 'POST',
                         headers: {
@@ -1087,7 +1122,8 @@ async def root():
                             room_url: data.room_url,
                             room_name: data.room_name,
                             token: data.token,
-                            language: selectedLanguage
+                            language: selectedLanguage,
+                            stt_provider: selectedSTTProvider
                         })
                     });
                     
@@ -1230,6 +1266,7 @@ class BotStartRequest(BaseModel):
     room_name: str
     token: Optional[str] = None
     language: Optional[str] = "ko"  # 기본값: 한국어 (ko/en)
+    stt_provider: Optional[str] = "elevenlabs"  # 기본값: ElevenLabs (whisper/elevenlabs)
 
 
 @app.post("/api/start-bot")
@@ -1238,9 +1275,9 @@ async def start_bot(request: BotStartRequest):
     봇을 시작합니다.
     """
     try:
-        # 백그라운드에서 봇 실행 (언어 설정 전달)
+        # 백그라운드에서 봇 실행 (언어 및 STT 프로바이더 설정 전달)
         bot = OliveYoungVoiceBot()
-        asyncio.create_task(bot.run(request.room_url, request.token, request.language))
+        asyncio.create_task(bot.run(request.room_url, request.token, request.language, request.stt_provider))
         
         return JSONResponse(
             content={

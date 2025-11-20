@@ -434,7 +434,7 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
         
         return prompt
     
-    async def run(self, room_url: str, token: str = None, language: str = "ko"):
+    async def run(self, room_url: str, token: str = None, language: str = "ko", stt_provider: str = "elevenlabs"):
         """
         봇을 실행합니다.
         
@@ -442,6 +442,7 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
             room_url: Daily.co 룸 URL
             token: 인증 토큰 (선택사항)
             language: STT 언어 설정 (ko/en, 기본값: ko)
+            stt_provider: STT 프로바이더 선택 ("whisper" 또는 "elevenlabs", 기본값: "elevenlabs")
         """
         logger.info(f"Starting Olive Young Voice Assistant Bot (Language: {language})")
         
@@ -459,30 +460,42 @@ A: "서울 중구 명동길 53에 있습니다. 명동역 8번 출구입니다. 
             ),
         )
         
-        # STT 서비스 - ElevenLabs Scribe Realtime v2 (초저지연!)
-        # API 키 검증
-        if not self.elevenlabs_api_key:
-            raise ValueError("ELEVENLABS_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
+        # STT 서비스 선택 (Whisper 또는 ElevenLabs)
+        logger.info(f"🎙️ STT Provider: {stt_provider}")
         
-        if len(self.elevenlabs_api_key) < 20:
-            logger.warning(f"⚠️ API key seems too short (length: {len(self.elevenlabs_api_key)})")
-        
-        # ElevenLabs STT 서비스 초기화 (API 키 직접 사용)
-        # 참고: Single-use token 불필요, API 키를 xi-api-key 헤더로 전달
-        # https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/realtime/scribe.py
-        # https://elevenlabs.io/docs/cookbooks/speech-to-text/streaming
-        logger.info(f"🎙️ Initializing ElevenLabs STT service (language: {language})")
-        logger.info(f"📝 Using API key directly (no token generation needed)")
-        logger.info(f"📝 API key length: {len(self.elevenlabs_api_key)}")
-        logger.info(f"📝 API key prefix: {self.elevenlabs_api_key[:10]}...")
-        
-        stt = ElevenLabsSTTService(
-            api_key=self.elevenlabs_api_key,  # API 키 직접 사용
-            model_id="scribe_v2_realtime",
-            sample_rate=16000,
-            language_code=language if language in ["ko", "en"] else None,  # ISO-639-1 코드 (ko/en) 또는 None (자동 감지)
-            commit_strategy="vad",  # VAD: Voice Activity Detection - 자동 커밋
-        )
+        if stt_provider == "elevenlabs":
+            # ElevenLabs Scribe Realtime v2 (초저지연!)
+            # API 키 검증
+            if not self.elevenlabs_api_key:
+                raise ValueError("ELEVENLABS_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
+            
+            if len(self.elevenlabs_api_key) < 20:
+                logger.warning(f"⚠️ API key seems too short (length: {len(self.elevenlabs_api_key)})")
+            
+            # ElevenLabs STT 서비스 초기화 (API 키 직접 사용)
+            # 참고: Single-use token 불필요, API 키를 xi-api-key 헤더로 전달
+            # https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/realtime/scribe.py
+            # https://elevenlabs.io/docs/cookbooks/speech-to-text/streaming
+            logger.info(f"🎙️ Initializing ElevenLabs STT service (language: {language})")
+            logger.info(f"📝 Using API key directly (no token generation needed)")
+            logger.info(f"📝 API key length: {len(self.elevenlabs_api_key)}")
+            logger.info(f"📝 API key prefix: {self.elevenlabs_api_key[:10]}...")
+            
+            stt = ElevenLabsSTTService(
+                api_key=self.elevenlabs_api_key,  # API 키 직접 사용
+                model_id="scribe_v2_realtime",
+                sample_rate=16000,
+                language_code=language if language in ["ko", "en"] else None,  # ISO-639-1 코드 (ko/en) 또는 None (자동 감지)
+                commit_strategy="vad",  # VAD: Voice Activity Detection - 자동 커밋
+            )
+        else:
+            # OpenAI Whisper STT (기본값 또는 stt_provider == "whisper")
+            logger.info(f"🎙️ Initializing OpenAI Whisper STT service (language: {language})")
+            stt = OpenAISTTService(
+                api_key=self.openai_api_key,
+                model="whisper-1",
+                language=language if language in ["ko", "en"] else None,  # ko/en 또는 None (자동 감지)
+            )
         
         # TTS 서비스 (텍스트 → 음성) - Cartesia
         # 한국어 여성 음성 옵션:
